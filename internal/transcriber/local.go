@@ -1,6 +1,7 @@
 package transcriber
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -46,14 +47,35 @@ func (l *LocalWhisper) Transcribe(ctx context.Context, samples []float32) (strin
 	// result. Reading stdout directly avoids version-specific output-file
 	// behavior and an unnecessary temporary transcript file.
 	args := []string{"-m", l.Model, "-f", inputPath, "-np", "-nt"}
-	if l.Language != "" {
-		args = append(args, "-l", l.Language)
+	if language := whisperLanguage(l.Language); language != "" {
+		args = append(args, "-l", language)
 	}
 	command := exec.CommandContext(ctx, binary, args...)
 	configureCommand(command)
-	output, err := command.CombinedOutput()
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	output, err := command.Output()
 	if err != nil {
-		return "", fmt.Errorf("whisper.cpp failed: %w: %s", err, strings.TrimSpace(string(output)))
+		details := strings.TrimSpace(stderr.String())
+		if details != "" {
+			return "", fmt.Errorf("whisper.cpp failed: %w: %s", err, details)
+		}
+		return "", fmt.Errorf("whisper.cpp failed: %w", err)
 	}
-	return strings.TrimSpace(string(output)), nil
+	text := strings.TrimSpace(string(output))
+	if strings.Contains(strings.ToLower(stderr.String()), "error:") {
+		return "", fmt.Errorf("whisper.cpp failed: %s", strings.TrimSpace(stderr.String()))
+	}
+	return text, nil
+}
+
+func whisperLanguage(language string) string {
+	language = strings.ToLower(strings.TrimSpace(language))
+	if language == "" || language == "auto" {
+		return language
+	}
+	if separator := strings.IndexAny(language, "-_"); separator >= 0 {
+		return language[:separator]
+	}
+	return language
 }
