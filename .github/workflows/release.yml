@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version without the leading v
+        required: true
+        default: "0.2.0"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installers:
+    name: Windows ${{ matrix.architecture }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture:
+          - amd64
+          - arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve version
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $version = "${{ github.ref_name }}".TrimStart("v")
+          } else {
+            $version = "${{ inputs.version }}"
+          }
+          "VOXSTEER_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Install Inno Setup 7
+        shell: pwsh
+        run: |
+          winget install --id JRSoftware.InnoSetup.7 -e -s winget `
+            --accept-package-agreements --accept-source-agreements --silent
+
+      - name: Build installer
+        shell: pwsh
+        run: ./scripts/build-installer.ps1 -Architecture ${{ matrix.architecture }}
+
+      - name: Stage release assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Copy-Item "dist/installers/voxsteer-$env:VOXSTEER_VERSION-windows-${{ matrix.architecture }}.exe" release/
+          Copy-Item "dist/windows-${{ matrix.architecture }}/voxsteer.exe" `
+            "release/voxsteer-$env:VOXSTEER_VERSION-windows-${{ matrix.architecture }}-portable.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.architecture }}
+          path: release/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    if: github.ref_type == 'tag'
+    needs: windows-installers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: windows-*
+          path: release
+          merge-multiple: true
+
+      - name: Create checksums
+        working-directory: release
+        run: sha256sum * > SHA256SUMS.txt
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" release/* \
+            --repo "${{ github.repository }}" \
+            --title "VoxSteer ${{ github.ref_name }}" \
+            --generate-notes \
+            --notes "Use the architecture-specific installer for the guided setup wizard. It creates the configuration automatically and offers cloud, optional local transcription, configurable keyboard shortcuts, and mouse/tray activation. Portable executables are provided for advanced use."

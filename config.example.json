@@ -1,8 +1,9 @@
 {
   "engine": "local",
   "language": "en",
+  "shortcut": "ctrl+alt+space",
   "local": {
-    "binary": "whisper/bin/Release/whisper-cli.exe",
+    "binary": "whisper/Release/whisper-cli.exe",
     "model": "models/ggml-large-v3-turbo-q5_0.bin"
   },
   "cloud": {

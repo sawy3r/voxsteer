@@ -22,12 +22,12 @@ if ($Architecture -eq "amd64" -and -not (Get-Command "nvcc" -ErrorAction Silentl
 $source = Join-Path $projectRoot ".build/whisper.cpp"
 $build = Join-Path $projectRoot ".build/whisper-$Architecture"
 $bundle = Join-Path $projectRoot "$Destination/windows-$Architecture"
-$whisperBundle = Join-Path $bundle "whisper"
+$whisperBundle = Join-Path $bundle "whisper/Release"
 $modelBundle = Join-Path $bundle "models"
 
 if (-not (Test-Path $source)) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $source) | Out-Null
-    git clone --depth 1 https://github.com/ggml-org/whisper.cpp.git $source
+    git clone --depth 1 --branch v1.9.1 https://github.com/ggml-org/whisper.cpp.git $source
 }
 
 if ($Architecture -eq "amd64") {
@@ -87,8 +87,9 @@ go build `
 $config = @{
     engine = "local"
     language = "en"
+    shortcut = "ctrl+alt+space"
     local = @{
-        binary = "whisper/whisper-cli.exe"
+        binary = "whisper/Release/whisper-cli.exe"
         model = "models/$modelFile"
     }
     cloud = @{

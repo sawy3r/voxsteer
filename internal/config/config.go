@@ -11,6 +11,7 @@ import (
 type Config struct {
 	Engine   string `json:"engine"`
 	Language string `json:"language"`
+	Shortcut string `json:"shortcut"`
 	Local    struct {
 		Binary string `json:"binary"`
 		Model  string `json:"model"`
@@ -29,6 +30,7 @@ func Load() (Config, string, error) {
 	var cfg Config
 	cfg.Engine = "local"
 	cfg.Cloud.Model = "whisper-1"
+	cfg.Shortcut = "ctrl+alt+space"
 
 	path, required, err := configPath()
 	if err != nil {
@@ -100,6 +102,7 @@ func applyEnvironment(cfg *Config) {
 	override(&cfg.Cloud.Endpoint, "VTT_CLOUD_ENDPOINT")
 	override(&cfg.Cloud.APIKey, "VTT_CLOUD_API_KEY")
 	override(&cfg.Cloud.Model, "VTT_CLOUD_MODEL")
+	override(&cfg.Shortcut, "VTT_SHORTCUT")
 }
 
 func override(target *string, name string) {

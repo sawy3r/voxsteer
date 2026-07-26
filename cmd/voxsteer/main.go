@@ -10,6 +10,7 @@ import (
 	"github.com/sawy3r/voxsteer/internal/app"
 	"github.com/sawy3r/voxsteer/internal/config"
 	"github.com/sawy3r/voxsteer/internal/desktop"
+	"github.com/sawy3r/voxsteer/internal/shortcut"
 	"github.com/sawy3r/voxsteer/internal/transcriber"
 	"golang.design/x/hotkey"
 )
@@ -32,10 +33,14 @@ func run() error {
 		}
 		return fmt.Errorf("%w (configuration: %s)", err, configPath)
 	}
+	activation, err := shortcut.Parse(cfg.Shortcut)
+	if err != nil {
+		return fmt.Errorf("invalid activation shortcut: %w", err)
+	}
 
 	systray.Run(func() {
 		systray.SetTitle("VoxSteer")
-		systray.SetTooltip("VoxSteer — Ctrl+Shift+S")
+		systray.SetTooltip("VoxSteer — " + activation.Display)
 		statusItem := systray.AddMenuItem("Status: idle", "Current dictation status")
 		statusItem.Disable()
 		controller := app.New(
@@ -48,21 +53,26 @@ func run() error {
 			},
 			func(err error) { log.Printf("dictation failed: %v", err) },
 		)
-		toggleItem := systray.AddMenuItem("Start / stop dictation", "Ctrl+Shift+S")
+		toggleItem := systray.AddMenuItem("Start / stop dictation", activation.Display)
 		systray.AddSeparator()
 		quitItem := systray.AddMenuItem("Quit", "Quit VoxSteer")
 
-		hk := hotkey.New([]hotkey.Modifier{hotkey.ModCtrl, hotkey.ModShift}, hotkey.KeyS)
-		if err := hk.Register(); err != nil {
-			log.Printf("register Ctrl+Shift+S: %v", err)
-		} else {
-			go func() {
-				for range hk.Keydown() {
-					if err := controller.Toggle(); err != nil {
-						log.Print(err)
+		hk, hotkeyErr := configuredHotkey(activation)
+		if hotkeyErr != nil {
+			log.Printf("configure %s: %v", activation.Display, hotkeyErr)
+		} else if hk != nil {
+			if err := hk.Register(); err != nil {
+				log.Printf("register %s: %v; the tray menu remains available", activation.Display, err)
+				hk = nil
+			} else {
+				go func() {
+					for range hk.Keydown() {
+						if err := controller.Toggle(); err != nil {
+							log.Print(err)
+						}
 					}
-				}
-			}()
+				}()
+			}
 		}
 		go func() {
 			for {
@@ -72,7 +82,9 @@ func run() error {
 						log.Print(err)
 					}
 				case <-quitItem.ClickedCh:
-					_ = hk.Unregister()
+					if hk != nil {
+						_ = hk.Unregister()
+					}
 					systray.Quit()
 					return
 				}
@@ -81,6 +93,54 @@ func run() error {
 		log.Printf("ready: %s", desktop.InjectionRequirements())
 	}, func() {})
 	return nil
+}
+
+func configuredHotkey(spec shortcut.Spec) (*hotkey.Hotkey, error) {
+	if spec.Key == "" {
+		return nil, nil
+	}
+	modifiers := make([]hotkey.Modifier, 0, 4)
+	if spec.Ctrl {
+		modifiers = append(modifiers, hotkey.ModCtrl)
+	}
+	if spec.Alt {
+		modifiers = append(modifiers, platformAltModifier())
+	}
+	if spec.Shift {
+		modifiers = append(modifiers, hotkey.ModShift)
+	}
+	if spec.Super {
+		modifiers = append(modifiers, platformSuperModifier())
+	}
+	key, err := hotkeyKey(spec.Key)
+	if err != nil {
+		return nil, err
+	}
+	return hotkey.New(modifiers, key), nil
+}
+
+func hotkeyKey(key string) (hotkey.Key, error) {
+	keys := map[string]hotkey.Key{
+		"SPACE": hotkey.KeySpace,
+		"A":     hotkey.KeyA, "B": hotkey.KeyB, "C": hotkey.KeyC,
+		"D": hotkey.KeyD, "E": hotkey.KeyE, "F": hotkey.KeyF,
+		"G": hotkey.KeyG, "H": hotkey.KeyH, "I": hotkey.KeyI,
+		"J": hotkey.KeyJ, "K": hotkey.KeyK, "L": hotkey.KeyL,
+		"M": hotkey.KeyM, "N": hotkey.KeyN, "O": hotkey.KeyO,
+		"P": hotkey.KeyP, "Q": hotkey.KeyQ, "R": hotkey.KeyR,
+		"S": hotkey.KeyS, "T": hotkey.KeyT, "U": hotkey.KeyU,
+		"V": hotkey.KeyV, "W": hotkey.KeyW, "X": hotkey.KeyX,
+		"Y": hotkey.KeyY, "Z": hotkey.KeyZ,
+		"F1": hotkey.KeyF1, "F2": hotkey.KeyF2, "F3": hotkey.KeyF3,
+		"F4": hotkey.KeyF4, "F5": hotkey.KeyF5, "F6": hotkey.KeyF6,
+		"F7": hotkey.KeyF7, "F8": hotkey.KeyF8, "F9": hotkey.KeyF9,
+		"F10": hotkey.KeyF10, "F11": hotkey.KeyF11, "F12": hotkey.KeyF12,
+	}
+	value, ok := keys[key]
+	if !ok {
+		return 0, fmt.Errorf("unsupported shortcut key %q", key)
+	}
+	return value, nil
 }
 
 func configuredEngine(cfg config.Config) (transcriber.Transcriber, error) {

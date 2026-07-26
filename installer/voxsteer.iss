@@ -3,7 +3,9 @@
 #endif
 
 #define AppName "VoxSteer"
-#define AppVersion "0.1.0"
+#ifndef AppVersion
+  #define AppVersion "0.1.0"
+#endif
 #define BundleDir AddBackslash(SourcePath) + "..\dist\windows-" + Architecture
 
 #if Architecture == "amd64"
@@ -14,6 +16,9 @@
   #define ModelURL "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin"
   #define ModelSHA256 "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"
   #define ModelSize "574041195"
+  #define RuntimeURL "https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.1/whisper-cublas-12.4.0-bin-x64.zip"
+  #define RuntimeSHA256 "106a2030eff8998e4ef320fe72e263a78449e9040386ee27c41ea80b001b601b"
+  #define RuntimeSize "1209487872"
 #elif Architecture == "arm64"
   #define ArchitectureAllowed "arm64"
   #define ArchitectureLabel "ARM64"
@@ -42,6 +47,7 @@ PrivilegesRequired=lowest
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+ArchiveExtraction=full
 UninstallDisplayName={#AppName}
 CloseApplications=yes
 CloseApplicationsFilter=voxsteer.exe
@@ -52,7 +58,11 @@ Name: "startup"; Description: "Start VoxSteer when I sign in"; GroupDescription:
 
 [Files]
 Source: "{#BundleDir}\voxsteer.exe"; DestDir: "{app}"; Flags: ignoreversion
+#if Architecture == "amd64"
+Source: "{#RuntimeURL}"; DestName: "whisper-cuda.zip"; DestDir: "{app}\whisper"; Tasks: local; Hash: "{#RuntimeSHA256}"; ExternalSize: {#RuntimeSize}; Flags: external download extractarchive ignoreversion recursesubdirs createallsubdirs
+#else
 Source: "{#BundleDir}\whisper\*"; DestDir: "{app}\whisper"; Tasks: local; Flags: ignoreversion recursesubdirs createallsubdirs
+#endif
 Source: "{#ModelURL}"; DestName: "{#ModelFile}"; DestDir: "{app}\models"; Tasks: local; Hash: "{#ModelSHA256}"; ExternalSize: {#ModelSize}; Flags: external download ignoreversion
 
 [Icons]
@@ -65,6 +75,7 @@ Filename: "{app}\voxsteer.exe"; Description: "Launch VoxSteer"; Flags: postinsta
 [Code]
 var
   CommonPage: TInputQueryWizardPage;
+  ActivationPage: TInputOptionWizardPage;
   CloudPage: TInputQueryWizardPage;
   ExistingConfig: Boolean;
 
@@ -95,8 +106,22 @@ begin
   CommonPage.Add('Language:', False);
   CommonPage.Values[0] := 'en';
 
-  CloudPage := CreateInputQueryPage(
+  ActivationPage := CreateInputOptionPage(
     CommonPage.ID,
+    'Activation',
+    'How would you like to start and stop dictation?',
+    'Choose a global keyboard shortcut, or use the VoxSteer tray menu with your mouse.',
+    True,
+    False
+  );
+  ActivationPage.Add('Ctrl+Alt+Space (recommended)');
+  ActivationPage.Add('Ctrl+Shift+D');
+  ActivationPage.Add('F8');
+  ActivationPage.Add('Mouse / tray only');
+  ActivationPage.SelectedValueIndex := 0;
+
+  CloudPage := CreateInputQueryPage(
+    ActivationPage.ID,
     'Cloud transcription',
     'Configure an OpenAI-compatible transcription endpoint.',
     'These settings are stored only in your Windows profile.'
@@ -111,7 +136,10 @@ end;
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
   Result := False;
-  if ExistingConfig and ((PageID = CommonPage.ID) or (PageID = CloudPage.ID)) then
+  if ExistingConfig and
+     ((PageID = CommonPage.ID) or
+      (PageID = ActivationPage.ID) or
+      (PageID = CloudPage.ID)) then
     Result := True
   else if (PageID = CloudPage.ID) and WizardIsTaskSelected('local') then
     Result := True;
@@ -131,6 +159,7 @@ procedure WriteConfiguration;
 var
   Lines: TArrayOfString;
   Engine: String;
+  Shortcut: String;
   ConfigJSON: String;
 begin
   if ExistingConfig then
@@ -141,12 +170,20 @@ begin
   else
     Engine := 'cloud';
 
+  case ActivationPage.SelectedValueIndex of
+    0: Shortcut := 'ctrl+alt+space';
+    1: Shortcut := 'ctrl+shift+d';
+    2: Shortcut := 'f8';
+    3: Shortcut := 'disabled';
+  end;
+
   ConfigJSON :=
     '{' +
     '"engine":"' + Engine + '",' +
     '"language":"' + JsonEscape(CommonPage.Values[0]) + '",' +
+    '"shortcut":"' + Shortcut + '",' +
     '"local":{' +
-      '"binary":"' + JsonEscape(ExpandConstant('{app}\whisper\whisper-cli.exe')) + '",' +
+      '"binary":"' + JsonEscape(ExpandConstant('{app}\whisper\Release\whisper-cli.exe')) + '",' +
       '"model":"' + JsonEscape(ExpandConstant('{app}\models\{#ModelFile}')) + '"' +
     '},' +
     '"cloud":{' +

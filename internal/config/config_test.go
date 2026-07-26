@@ -12,6 +12,7 @@ func TestLoadExplicitConfigAndEnvironmentOverride(t *testing.T) {
 	body := []byte(`{
 		"engine": "local",
 		"language": "en",
+		"shortcut": "ctrl+shift+d",
 		"local": {"binary": "whisper/whisper-cli.exe", "model": "models/model.bin"},
 		"cloud": {"endpoint": "", "api_key": "", "model": "whisper-1"}
 	}`)
@@ -30,6 +31,9 @@ func TestLoadExplicitConfigAndEnvironmentOverride(t *testing.T) {
 	}
 	if cfg.Language != "fr" {
 		t.Fatalf("language = %q, want fr", cfg.Language)
+	}
+	if cfg.Shortcut != "ctrl+shift+d" {
+		t.Fatalf("shortcut = %q, want ctrl+shift+d", cfg.Shortcut)
 	}
 	if cfg.Local.Model != filepath.Join(dir, "models", "model.bin") {
 		t.Fatalf("model path = %q", cfg.Local.Model)

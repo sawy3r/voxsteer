@@ -2,8 +2,8 @@
 
 **Your voice at the controls.**
 
-A cross-platform Go dictation and computer-control foundation: press
-`Ctrl+Shift+S`, speak, press it
+A cross-platform Go dictation and computer-control foundation: press the
+configured shortcut (default `Ctrl+Alt+Space`), speak, press it
 again, and the transcription is typed into the focused application without
 using the clipboard. VoxSteer is cloud-first, with optional local Whisper
 transcription for private and offline use.
@@ -77,12 +77,14 @@ Build both application binaries from any Go development machine:
 
 ### Installer
 
-The Windows installer is cloud-first. By default it installs only the small
-core application and asks for an OpenAI-compatible endpoint, API key, model, and
-language. Local transcription is an unchecked optional task:
+The Windows installer is cloud-first. Its setup wizard asks for the activation
+method, language, transcription engine, and any cloud credentials, then creates
+the user's `config.json` automatically. Users never need to edit JSON. The
+default activation shortcut is `Ctrl+Alt+Space`; alternatives and a mouse-only
+tray mode are offered. Local transcription is an unchecked optional task:
 
-- x64 downloads the verified `large-v3-turbo-q5_0` model and installs the
-  prebuilt CUDA runtime.
+- x64 downloads and verifies the `large-v3-turbo-q5_0` model and prebuilt CUDA
+  runtime only when Local is selected.
 - ARM64 downloads the verified `base.en` model and installs the native CPU
   runtime.
 
@@ -122,9 +124,10 @@ integrity level.
 
 ## Configuration
 
-Copy `config.example.json` to `config.json` beside the executable. Relative
-Whisper paths are resolved from that file. The app also checks the per-user
-`VoxSteer/config.json` directory returned by the operating system. Existing
+The installer creates the configuration automatically under the per-user
+`VoxSteer/config.json` directory returned by the operating system. Portable and
+developer builds can copy `config.example.json` to `config.json` beside the
+executable. Relative Whisper paths are resolved from that file. Existing
 `VTT_*` environment variables override file values.
 
 ## Native prerequisites
