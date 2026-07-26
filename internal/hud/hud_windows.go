@@ -99,6 +99,7 @@ var (
 	procCreateRoundRgn        = gdi32.NewProc("CreateRoundRectRgn")
 	procSetBkMode             = gdi32.NewProc("SetBkMode")
 	procSetTextColor          = gdi32.NewProc("SetTextColor")
+	procGetTextExtent         = gdi32.NewProc("GetTextExtentPoint32W")
 	procGetStockObject        = gdi32.NewProc("GetStockObject")
 	procSelectObject          = gdi32.NewProc("SelectObject")
 	procTextOut               = gdi32.NewProc("TextOutW")
@@ -124,6 +125,11 @@ type windowState struct {
 type point struct {
 	X int32
 	Y int32
+}
+
+type size struct {
+	Width  int32
+	Height int32
 }
 
 type rect struct {
@@ -528,9 +534,18 @@ func paintWindow(window uintptr, state *windowState) {
 	_, _, _ = procSetTextColor.Call(context, labelColor)
 	textOut(context, 16, 26, label)
 
+	waveLeft, waveStep, waveVisible := waveformLayout(
+		textWidth(context, label),
+		hudWidth-pinHitWidth-10,
+		len(state.history),
+	)
+
 	waveBrush, _, _ := procCreateBrush.Call(rgb(34, 211, 238))
 	defer procDeleteObject.Call(waveBrush)
 	for i, value := range state.history {
+		if !waveVisible {
+			break
+		}
 		if state.status == statusProcessing {
 			value = float32((i%4)+2) / 6
 		} else if state.status == statusError {
@@ -539,10 +554,11 @@ func paintWindow(window uintptr, state *windowState) {
 			value = 0.12
 		}
 		height := int32(4 + value*40)
+		left := int32(waveLeft + i*waveStep)
 		bar := rect{
-			Left:   int32(100 + i*9),
+			Left:   left,
 			Top:    (hudHeight - height) / 2,
-			Right:  int32(105 + i*9),
+			Right:  left + int32(waveBarWidth),
 			Bottom: (hudHeight + height) / 2,
 		}
 		_, _, _ = procFillRect.Call(context, uintptr(unsafe.Pointer(&bar)), waveBrush)
@@ -596,6 +612,21 @@ func loadInterFont() (uintptr, uintptr, error) {
 		return 0, 0, fmt.Errorf("create Inter HUD font: %w", fontErr)
 	}
 	return resource, font, nil
+}
+
+func textWidth(context uintptr, text string) int {
+	encoded, _ := syscall.UTF16FromString(text)
+	var dimensions size
+	ok, _, _ := procGetTextExtent.Call(
+		context,
+		uintptr(unsafe.Pointer(&encoded[0])),
+		uintptr(len(encoded)-1),
+		uintptr(unsafe.Pointer(&dimensions)),
+	)
+	if ok == 0 {
+		return 0
+	}
+	return int(dimensions.Width)
 }
 
 func textOut(context uintptr, x, y int, text string) {
