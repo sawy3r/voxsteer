@@ -25,12 +25,12 @@ func main() {
 		defer closeLog()
 		log.Printf("VoxSteer diagnostic log: %s", logPath)
 	}
-	if err := run(); err != nil {
+	if err := run(logPath); err != nil {
 		desktop.ShowStartupError(err)
 	}
 }
 
-func run() error {
+func run(logPath string) error {
 	cfg, configPath, err := config.Load()
 	if err != nil {
 		return err
@@ -75,6 +75,7 @@ func run() error {
 		)
 		toggleItem := systray.AddMenuItem("Start / stop dictation", activation.Display)
 		systray.AddSeparator()
+		logItem := systray.AddMenuItem("Open diagnostic log", logPath)
 		quitItem := systray.AddMenuItem("Quit", "Quit VoxSteer")
 
 		stopActivation := configureActivation(activation, controller)
@@ -84,6 +85,10 @@ func run() error {
 				case <-toggleItem.ClickedCh:
 					if err := controller.Toggle(); err != nil {
 						log.Print(err)
+					}
+				case <-logItem.ClickedCh:
+					if err := openPath(logPath); err != nil {
+						log.Printf("open diagnostic log: %v", err)
 					}
 				case <-quitItem.ClickedCh:
 					stopActivation()
