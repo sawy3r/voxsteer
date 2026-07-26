@@ -13,6 +13,9 @@ func TestParse(t *testing.T) {
 		{"F8", "F8", "F8"},
 		{"disabled", "Mouse / tray only", ""},
 		{"cmd+alt+v", "Alt+Win/Cmd+V", "V"},
+		{"ctrl+alt+9", "Ctrl+Alt+9", "9"},
+		{"mouse4", "Mouse 4", ""},
+		{"mouse5", "Mouse 5", ""},
 	}
 	for _, test := range tests {
 		t.Run(test.value, func(t *testing.T) {
@@ -28,7 +31,10 @@ func TestParse(t *testing.T) {
 }
 
 func TestParseRejectsInvalidShortcuts(t *testing.T) {
-	for _, value := range []string{"s", "ctrl", "ctrl+s+d", "ctrl+escape", "ctrl+ctrl+s"} {
+	for _, value := range []string{
+		"s", "ctrl", "ctrl+s+d", "ctrl+escape", "ctrl+ctrl+s",
+		"mouse1", "mouse2", "mouse6", "mousewat",
+	} {
 		t.Run(value, func(t *testing.T) {
 			if _, err := Parse(value); err == nil {
 				t.Fatalf("Parse(%q) succeeded", value)

@@ -19,7 +19,10 @@ import (
 // microphone through WASAPI. It is pure Go and builds for Windows amd64/arm64.
 type Recorder struct{}
 
-func (Recorder) Record(ctx context.Context) ([]float32, error) {
+func (Recorder) Record(ctx context.Context, onLevel func(float32)) ([]float32, error) {
+	if onLevel == nil {
+		onLevel = func(float32) {}
+	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -89,6 +92,9 @@ func (Recorder) Record(ctx context.Context) ([]float32, error) {
 	samples := make([]float32, 0, 16000*30)
 	ticker := time.NewTicker(5 * time.Millisecond)
 	defer ticker.Stop()
+	lastLevel := time.Now()
+	var levelSumSquares float64
+	var levelSamples int
 
 	for {
 		select {
@@ -119,17 +125,32 @@ func (Recorder) Record(ctx context.Context) ([]float32, error) {
 
 				if bufferFlags&wca.AUDCLNT_BUFFERFLAGS_SILENT != 0 {
 					samples = append(samples, make([]float32, frames)...)
+					levelSamples += int(frames)
 				} else if frames > 0 {
 					raw := unsafe.Slice(data, int(frames)*2)
 					for offset := 0; offset < len(raw); offset += 2 {
 						value := int16(binary.LittleEndian.Uint16(raw[offset : offset+2]))
-						samples = append(samples, float32(value)/math.MaxInt16)
+						sample := float32(value) / math.MaxInt16
+						samples = append(samples, sample)
+						levelSumSquares += float64(sample * sample)
+						levelSamples++
 					}
 				}
 				if err := capture.ReleaseBuffer(frames); err != nil {
 					return nil, fmt.Errorf("release microphone packet: %w", err)
 				}
 			}
+			if levelSamples > 0 && time.Since(lastLevel) >= 40*time.Millisecond {
+				onLevel(visualLevel(levelSumSquares / float64(levelSamples)))
+				levelSumSquares = 0
+				levelSamples = 0
+				lastLevel = time.Now()
+			}
 		}
 	}
+}
+
+func visualLevel(meanSquare float64) float32 {
+	rms := math.Sqrt(meanSquare)
+	return float32(math.Min(1, math.Sqrt(rms*3)))
 }

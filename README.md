@@ -15,9 +15,9 @@ Go and independently tested. Native desktop adapters are enabled with the
 `desktop` build tag:
 
 ```text
-Ctrl+Shift+S → microphone (16 kHz mono) → cloud or whisper.cpp → native typing
-                      ↑                                      ↓
-                   tray status                         focused field
+captured shortcut / mouse button → microphone → cloud or whisper.cpp → native typing
+                                       │                                  ↓
+                              live recording HUD                    focused field
 ```
 
 Windows uses WASAPI and `SendInput` directly and builds without CGO. macOS and
@@ -79,9 +79,14 @@ Build both application binaries from any Go development machine:
 
 The Windows installer is cloud-first. Its setup wizard asks for the activation
 method, language, transcription engine, and any cloud credentials, then creates
-the user's `config.json` automatically. Users never need to edit JSON. The
-default activation shortcut is `Ctrl+Alt+Space`; alternatives and a mouse-only
-tray mode are offered. Local transcription is an unchecked optional task:
+the user's `config.json` automatically. Users never need to edit JSON. Click
+**Capture** in the wizard and press any supported combination of
+Ctrl/Alt/Shift/Win plus a letter, number, Space, or F1–F12. Alternatively,
+press the middle mouse button, Mouse 4, or Mouse 5 to use that button directly.
+The default is `Ctrl+Alt+Space`, and tray-only activation remains available.
+On an upgrade, select **Reconfigure VoxSteer** to run these pages again;
+otherwise the installer preserves the working configuration. Local
+transcription is an unchecked optional task:
 
 - x64 downloads and verifies the `large-v3-turbo-q5_0` model and prebuilt CUDA
   runtime only when Local is selected.
@@ -99,6 +104,15 @@ This requires Inno Setup 7 plus the local-runtime prerequisites described
 below. The resulting installers are written to `dist\installers`. Model files
 are downloaded and SHA-256 verified only when the user selects local
 transcription, so cloud users do not download them.
+
+### Recording feedback
+
+On Windows, starting dictation displays a compact VoxSteer widget over the top
+of the active window. Its bars follow the live microphone level and its label
+changes while transcription is being processed. The widget does not take focus,
+so typing still returns to the original application. Click **pin** on the right
+while it is visible to keep it on top between recordings; click **PIN** again
+to return to automatic hiding.
 
 For a complete local bundle, run one of:
 
