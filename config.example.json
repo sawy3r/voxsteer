@@ -1,0 +1,13 @@
+{
+  "engine": "local",
+  "language": "en",
+  "local": {
+    "binary": "whisper/bin/Release/whisper-cli.exe",
+    "model": "models/ggml-large-v3-turbo-q5_0.bin"
+  },
+  "cloud": {
+    "endpoint": "",
+    "api_key": "",
+    "model": "whisper-1"
+  }
+}
