@@ -12,4 +12,6 @@ func (*Overlay) SetStatus(string) {}
 
 func (*Overlay) SetLevel(float32) {}
 
+func (*Overlay) SetError() {}
+
 func (*Overlay) Close() {}

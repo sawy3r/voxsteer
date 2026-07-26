@@ -90,4 +90,4 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "VoxSteer ${{ github.ref_name }}" \
             --generate-notes \
-            --notes "Use the architecture-specific installer for the guided setup wizard. It creates the configuration automatically and offers cloud or optional local transcription, live keyboard-shortcut capture, Mouse 3/4/5 activation, the VoxSteer tray icon, and a pinnable live recording-level widget on Windows. Existing settings are preserved unless Reconfigure VoxSteer is selected. Portable executables are provided for advanced use."
+            --notes "Use the architecture-specific installer for the guided setup wizard. It creates the configuration automatically and offers cloud or optional local transcription, live keyboard-shortcut capture, Mouse 3/4/5 activation, the VoxSteer tray icon, and a movable, pinnable recording-level widget on Windows. Local Whisper runs without a console window; failures are shown in the HUD and recorded in the private diagnostic log. Existing settings are preserved unless Reconfigure VoxSteer is selected. Portable executables are provided for advanced use."
