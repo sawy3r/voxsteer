@@ -11,12 +11,13 @@ const (
 )
 
 type Spec struct {
-	Ctrl    bool
-	Alt     bool
-	Shift   bool
-	Super   bool
-	Key     string
-	Display string
+	Ctrl        bool
+	Alt         bool
+	Shift       bool
+	Super       bool
+	Key         string
+	MouseButton int
+	Display     string
 }
 
 func Parse(value string) (Spec, error) {
@@ -26,6 +27,17 @@ func Parse(value string) (Spec, error) {
 	}
 	if value == Disabled {
 		return Spec{Display: "Mouse / tray only"}, nil
+	}
+	if strings.HasPrefix(value, "mouse") {
+		var button int
+		if _, err := fmt.Sscanf(value, "mouse%d", &button); err != nil ||
+			button < 3 || button > 5 {
+			return Spec{}, fmt.Errorf("unsupported mouse button %q", value)
+		}
+		return Spec{
+			MouseButton: button,
+			Display:     fmt.Sprintf("Mouse %d", button),
+		}, nil
 	}
 
 	var spec Spec
@@ -79,7 +91,9 @@ func Parse(value string) (Spec, error) {
 }
 
 func supportedKey(key string) bool {
-	if len(key) == 1 && key[0] >= 'A' && key[0] <= 'Z' {
+	if len(key) == 1 &&
+		((key[0] >= 'A' && key[0] <= 'Z') ||
+			(key[0] >= '0' && key[0] <= '9')) {
 		return true
 	}
 	switch key {

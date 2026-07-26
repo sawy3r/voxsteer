@@ -12,7 +12,7 @@ import (
 )
 
 type Recorder interface {
-	Record(ctx context.Context) ([]float32, error)
+	Record(ctx context.Context, onLevel func(float32)) ([]float32, error)
 }
 
 type Injector interface {
@@ -32,6 +32,7 @@ type Controller struct {
 	transcriber transcriber.Transcriber
 	injector    Injector
 	onStatus    func(Status)
+	onLevel     func(float32)
 	onError     func(error)
 	timeout     time.Duration
 
@@ -45,6 +46,7 @@ func New(
 	engine transcriber.Transcriber,
 	injector Injector,
 	onStatus func(Status),
+	onLevel func(float32),
 	onError func(error),
 ) *Controller {
 	if onStatus == nil {
@@ -53,9 +55,13 @@ func New(
 	if onError == nil {
 		onError = func(error) {}
 	}
+	if onLevel == nil {
+		onLevel = func(float32) {}
+	}
 	return &Controller{
 		recorder: recorder, transcriber: engine, injector: injector,
-		onStatus: onStatus, onError: onError, timeout: 2 * time.Minute, status: Idle,
+		onStatus: onStatus, onLevel: onLevel, onError: onError,
+		timeout: 2 * time.Minute, status: Idle,
 	}
 }
 
@@ -89,7 +95,7 @@ func (c *Controller) Toggle() error {
 }
 
 func (c *Controller) capture(ctx context.Context) {
-	samples, err := c.recorder.Record(ctx)
+	samples, err := c.recorder.Record(ctx, c.onLevel)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		c.onError(fmt.Errorf("record audio: %w", err))
 		c.finish(Idle)
@@ -118,5 +124,8 @@ func (c *Controller) finish(status Status) {
 	c.cancel = nil
 	c.status = status
 	c.mu.Unlock()
+	if status != Recording {
+		c.onLevel(0)
+	}
 	c.onStatus(status)
 }
