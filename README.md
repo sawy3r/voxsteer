@@ -172,7 +172,9 @@ does not remove those desktop requirements.
 VoxSteer writes operational diagnostics to
 `%AppData%\VoxSteer\voxsteer.log` on Windows. The log records captured audio
 duration, transcription success, and actionable errors, but never transcript
-text. A transcription failure also appears briefly in the recording widget.
+text. Use **Open diagnostic log** in the VoxSteer tray menu rather than
+navigating AppData manually. A transcription failure also appears briefly in
+the recording widget.
 
 ```sh
 go test ./...

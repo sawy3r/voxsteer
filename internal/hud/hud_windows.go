@@ -18,8 +18,9 @@ const (
 	wmClose          = 0x0010
 	wmEraseBkgnd     = 0x0014
 	wmMouseActivate  = 0x0021
-	wmNCHitTest      = 0x0084
 	wmTimer          = 0x0113
+	wmMouseMove      = 0x0200
+	wmLButtonDown    = 0x0201
 	wmLButtonUp      = 0x0202
 	wmAppStatus      = 0x8001
 	wmAppLevel       = 0x8002
@@ -27,8 +28,6 @@ const (
 	wsPopup          = 0x80000000
 	wsExToolWindow   = 0x00000080
 	wsExNoActivate   = 0x08000000
-	htClient         = 1
-	htCaption        = 2
 	maNoActivate     = 3
 	swHide           = 0
 	swShowNoActivate = 4
@@ -68,7 +67,10 @@ var (
 	procShowWindow      = user32.NewProc("ShowWindow")
 	procSetWindowPos    = user32.NewProc("SetWindowPos")
 	procGetForeground   = user32.NewProc("GetForegroundWindow")
+	procGetCursorPos    = user32.NewProc("GetCursorPos")
 	procGetWindowRect   = user32.NewProc("GetWindowRect")
+	procSetCapture      = user32.NewProc("SetCapture")
+	procReleaseCapture  = user32.NewProc("ReleaseCapture")
 	procInvalidateRect  = user32.NewProc("InvalidateRect")
 	procBeginPaint      = user32.NewProc("BeginPaint")
 	procEndPaint        = user32.NewProc("EndPaint")
@@ -98,6 +100,9 @@ type windowState struct {
 	status     int
 	pinned     bool
 	positioned bool
+	dragging   bool
+	pinPressed bool
+	dragOffset point
 	history    [12]float32
 }
 
@@ -302,25 +307,57 @@ func windowProc(window uintptr, message uint32, wParam, lParam uintptr) uintptr 
 		state.history[len(state.history)-1] = level
 		invalidate(window)
 		return 0
-	case wmLButtonUp:
+	case wmLButtonDown:
 		x := int(int16(lParam & 0xffff))
 		if x >= hudWidth-pinHitWidth {
-			state.pinned = !state.pinned
-			applyPinState(window, state.pinned || state.status != statusIdle)
-			if !state.pinned && state.status == statusIdle {
-				_, _, _ = procShowWindow.Call(window, swHide)
-			}
-			invalidate(window)
+			state.pinPressed = true
+			_, _, _ = procSetCapture.Call(window)
+			return 0
+		}
+		var cursor point
+		var bounds rect
+		cursorOK, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(&cursor)))
+		boundsOK, _, _ := procGetWindowRect.Call(window, uintptr(unsafe.Pointer(&bounds)))
+		if cursorOK != 0 && boundsOK != 0 {
+			state.dragging = true
+			state.dragOffset = point{X: cursor.X - bounds.Left, Y: cursor.Y - bounds.Top}
+			_, _, _ = procSetCapture.Call(window)
 		}
 		return 0
-	case wmNCHitTest:
-		screenX := int32(int16(lParam & 0xffff))
-		var bounds rect
-		ok, _, _ := procGetWindowRect.Call(window, uintptr(unsafe.Pointer(&bounds)))
-		if ok != 0 && screenX >= bounds.Right-pinHitWidth {
-			return htClient
+	case wmMouseMove:
+		if state.dragging {
+			var cursor point
+			ok, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(&cursor)))
+			if ok != 0 {
+				moveWindow(
+					window,
+					state,
+					cursor.X-state.dragOffset.X,
+					cursor.Y-state.dragOffset.Y,
+				)
+			}
 		}
-		return htCaption
+		return 0
+	case wmLButtonUp:
+		if state.dragging {
+			state.dragging = false
+			_, _, _ = procReleaseCapture.Call()
+			return 0
+		}
+		x := int(int16(lParam & 0xffff))
+		if state.pinPressed {
+			_, _, _ = procReleaseCapture.Call()
+			if x >= hudWidth-pinHitWidth {
+				state.pinned = !state.pinned
+				applyPinState(window, state.pinned || state.status != statusIdle)
+				if !state.pinned && state.status == statusIdle {
+					_, _, _ = procShowWindow.Call(window, swHide)
+				}
+				invalidate(window)
+			}
+		}
+		state.pinPressed = false
+		return 0
 	case wmMouseActivate:
 		return maNoActivate
 	case wmTimer:
@@ -355,10 +392,16 @@ func windowProc(window uintptr, message uint32, wParam, lParam uintptr) uintptr 
 
 func positionAndShow(window uintptr, state *windowState) {
 	x, y := int32(0), int32(0)
-	flags := uintptr(swpNoActivate | swpShowWindow)
 	if state.positioned {
-		flags |= swpNoMove
-	} else {
+		var current rect
+		ok, _, _ := procGetWindowRect.Call(window, uintptr(unsafe.Pointer(&current)))
+		if ok != 0 {
+			x, y = current.Left, current.Top
+		} else {
+			state.positioned = false
+		}
+	}
+	if !state.positioned {
 		foreground, _, _ := procGetForeground.Call()
 		var target rect
 		if foreground != 0 {
@@ -383,6 +426,23 @@ func positionAndShow(window uintptr, state *windowState) {
 		swpNoActivate|swpShowWindow,
 	)
 	_, _, _ = procShowWindow.Call(window, swShowNoActivate)
+}
+
+func moveWindow(window uintptr, state *windowState, x, y int32) {
+	insertAfter := hwndNotTopmost
+	if state.pinned || state.status != statusIdle {
+		insertAfter = hwndTopmost
+	}
+	_, _, _ = procSetWindowPos.Call(
+		window,
+		insertAfter,
+		uintptr(x),
+		uintptr(y),
+		0,
+		0,
+		swpNoSize|swpNoActivate,
+	)
+	state.positioned = true
 }
 
 func applyPinState(window uintptr, pinned bool) {

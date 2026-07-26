@@ -34,7 +34,6 @@ func (l *LocalWhisper) Transcribe(ctx context.Context, samples []float32) (strin
 	defer os.RemoveAll(dir)
 
 	inputPath := filepath.Join(dir, "audio.wav")
-	outputBase := filepath.Join(dir, "transcript")
 	if err := os.WriteFile(inputPath, wav, 0o600); err != nil {
 		return "", err
 	}
@@ -43,7 +42,10 @@ func (l *LocalWhisper) Transcribe(ctx context.Context, samples []float32) (strin
 	if binary == "" {
 		binary = "whisper-cli"
 	}
-	args := []string{"-m", l.Model, "-f", inputPath, "-otxt", "-of", outputBase, "-nt"}
+	// --no-prints keeps diagnostics off stdout while preserving the transcript
+	// result. Reading stdout directly avoids version-specific output-file
+	// behavior and an unnecessary temporary transcript file.
+	args := []string{"-m", l.Model, "-f", inputPath, "-np", "-nt"}
 	if l.Language != "" {
 		args = append(args, "-l", l.Language)
 	}
@@ -53,9 +55,5 @@ func (l *LocalWhisper) Transcribe(ctx context.Context, samples []float32) (strin
 	if err != nil {
 		return "", fmt.Errorf("whisper.cpp failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}
-	text, err := os.ReadFile(outputBase + ".txt")
-	if err != nil {
-		return "", fmt.Errorf("read whisper.cpp transcript: %w", err)
-	}
-	return strings.TrimSpace(string(text)), nil
+	return strings.TrimSpace(string(output)), nil
 }
