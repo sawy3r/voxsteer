@@ -39,22 +39,43 @@ if ($Architecture -eq "amd64") {
     # CUDA is unavailable on Snapdragon. This produces a native ARM64 CPU build.
     $modelName = "base.en"
     $modelSha1 = "137c40403d78fd54d454da0f9bd998f78703390c"
-    $cmakeArchitecture = "ARM64"
-    $backendArgs = @()
+    $cmakeArchitecture = ""
+    $backendArgs = @("-DGGML_OPENMP=OFF")
 }
 
-$configureArgs = @(
-    "-S", $source,
-    "-B", $build,
-    "-A", $cmakeArchitecture,
-    "-DBUILD_SHARED_LIBS=OFF",
-    "-DWHISPER_BUILD_TESTS=OFF"
-) + $backendArgs
+$configureArgs = if ($Architecture -eq "arm64") {
+    @(
+        "--preset", "arm64-windows-llvm+static-release",
+        "-S", $source,
+        "-B", $build,
+        "-DBUILD_SHARED_LIBS=OFF",
+        "-DWHISPER_BUILD_TESTS=OFF"
+    ) + $backendArgs
+} else {
+    @(
+        "-S", $source,
+        "-B", $build,
+        "-A", $cmakeArchitecture,
+        "-DBUILD_SHARED_LIBS=OFF",
+        "-DWHISPER_BUILD_TESTS=OFF"
+    ) + $backendArgs
+}
 cmake @configureArgs
-cmake --build $build --config Release --parallel
+if ($LASTEXITCODE -ne 0) {
+    throw "whisper.cpp configuration failed for $Architecture"
+}
+if ($Architecture -eq "arm64") {
+    cmake --build $build --parallel
+    $whisperExe = Join-Path $build "bin/whisper-cli.exe"
+} else {
+    cmake --build $build --config Release --parallel
+    $whisperExe = Join-Path $build "bin/Release/whisper-cli.exe"
+}
+if ($LASTEXITCODE -ne 0) {
+    throw "whisper.cpp build failed for $Architecture"
+}
 
 New-Item -ItemType Directory -Force -Path $whisperBundle, $modelBundle | Out-Null
-$whisperExe = Join-Path $build "bin/Release/whisper-cli.exe"
 if (-not (Test-Path $whisperExe)) {
     throw "whisper-cli.exe was not produced at $whisperExe"
 }

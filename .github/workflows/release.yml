@@ -25,9 +25,9 @@ jobs:
           - amd64
           - arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -60,7 +60,7 @@ jobs:
           Copy-Item "dist/windows-${{ matrix.architecture }}/voxsteer.exe" `
             "release/voxsteer-$env:VOXSTEER_VERSION-windows-${{ matrix.architecture }}-portable.exe"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-${{ matrix.architecture }}
           path: release/*
@@ -72,7 +72,7 @@ jobs:
     needs: windows-installers
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: windows-*
           path: release
