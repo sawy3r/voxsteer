@@ -180,3 +180,10 @@ the recording widget.
 go test ./...
 go test -race ./...
 ```
+
+## Third-party assets
+
+The Windows recording widget bundles
+[Inter](https://github.com/rsms/inter) Regular 4.1 by Rasmus Andersson and the
+Inter Project Authors under the SIL Open Font License 1.1. The font and its
+licence are kept together in `internal/hud/assets`.
