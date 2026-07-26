@@ -47,7 +47,9 @@ func (l *LocalWhisper) Transcribe(ctx context.Context, samples []float32) (strin
 	if l.Language != "" {
 		args = append(args, "-l", l.Language)
 	}
-	output, err := exec.CommandContext(ctx, binary, args...).CombinedOutput()
+	command := exec.CommandContext(ctx, binary, args...)
+	configureCommand(command)
+	output, err := command.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("whisper.cpp failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}

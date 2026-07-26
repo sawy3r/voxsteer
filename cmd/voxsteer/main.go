@@ -5,6 +5,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 
 	"github.com/getlantern/systray"
 	"github.com/sawy3r/voxsteer/internal/app"
@@ -18,6 +20,11 @@ import (
 )
 
 func main() {
+	logPath, closeLog, logErr := startLogging()
+	if logErr == nil {
+		defer closeLog()
+		log.Printf("VoxSteer diagnostic log: %s", logPath)
+	}
 	if err := run(); err != nil {
 		desktop.ShowStartupError(err)
 	}
@@ -60,7 +67,11 @@ func run() error {
 				overlay.SetStatus(string(status))
 			},
 			overlay.SetLevel,
-			func(err error) { log.Printf("dictation failed: %v", err) },
+			func(err error) {
+				log.Printf("dictation failed: %v", err)
+				statusItem.SetTitle("Error: see VoxSteer log")
+				overlay.SetError()
+			},
 		)
 		toggleItem := systray.AddMenuItem("Start / stop dictation", activation.Display)
 		systray.AddSeparator()
@@ -85,6 +96,24 @@ func run() error {
 		log.Printf("ready: %s", desktop.InjectionRequirements())
 	}, func() {})
 	return nil
+}
+
+func startLogging() (string, func(), error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", func() {}, err
+	}
+	logDir := filepath.Join(configDir, "VoxSteer")
+	if err := os.MkdirAll(logDir, 0o700); err != nil {
+		return "", func() {}, err
+	}
+	logPath := filepath.Join(logDir, "voxsteer.log")
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return "", func() {}, err
+	}
+	log.SetOutput(file)
+	return logPath, func() { _ = file.Close() }, nil
 }
 
 func configureActivation(spec shortcut.Spec, controller *app.Controller) func() {

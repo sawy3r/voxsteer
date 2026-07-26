@@ -25,7 +25,8 @@ Linux use miniaudio and RobotGo behind the same interfaces.
 
 The local adapter executes a `whisper-cli` built from the official whisper.cpp
 project. This keeps CUDA/Vulkan/Metal build choices outside the Go module and
-lets one application binary switch engines at runtime.
+lets one application binary switch engines at runtime. On Windows the child
+process runs without opening a console window.
 
 ## Run with a cloud transcription endpoint
 
@@ -167,6 +168,11 @@ APIs. Selecting the cloud engine removes whisper.cpp/CUDA from the runtime, but
 does not remove those desktop requirements.
 
 ## Verification
+
+VoxSteer writes operational diagnostics to
+`%AppData%\VoxSteer\voxsteer.log` on Windows. The log records captured audio
+duration, transcription success, and actionable errors, but never transcript
+text. A transcription failure also appears briefly in the recording widget.
 
 ```sh
 go test ./...

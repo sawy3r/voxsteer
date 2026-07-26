@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -11,6 +12,57 @@ type recorderFunc func(context.Context, func(float32)) ([]float32, error)
 
 func (f recorderFunc) Record(ctx context.Context, onLevel func(float32)) ([]float32, error) {
 	return f(ctx, onLevel)
+}
+
+func TestControllerReportsTranscriptionErrorAfterReturningIdle(t *testing.T) {
+	var mu sync.Mutex
+	var statusAtError Status
+	reported := make(chan error, 1)
+	controller := New(
+		recorderFunc(func(ctx context.Context, _ func(float32)) ([]float32, error) {
+			<-ctx.Done()
+			return []float32{0.1}, nil
+		}),
+		transcriberFunc(func(context.Context, []float32) (string, error) {
+			return "", errors.New("CUDA failed")
+		}),
+		injectorFunc(func(string) error {
+			t.Fatal("injector should not run after transcription failure")
+			return nil
+		}),
+		func(status Status) {
+			mu.Lock()
+			defer mu.Unlock()
+			statusAtError = status
+		},
+		nil,
+		func(err error) {
+			mu.Lock()
+			defer mu.Unlock()
+			reported <- err
+		},
+	)
+
+	if err := controller.Toggle(); err != nil {
+		t.Fatal(err)
+	}
+	if err := controller.Toggle(); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case err := <-reported:
+		if err.Error() != "CUDA failed" {
+			t.Fatalf("error = %q", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for transcription error")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if statusAtError != Idle {
+		t.Fatalf("status at error = %q, want idle", statusAtError)
+	}
 }
 
 type transcriberFunc func(context.Context, []float32) (string, error)

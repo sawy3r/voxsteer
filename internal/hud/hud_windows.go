@@ -19,9 +19,11 @@ const (
 	wmEraseBkgnd     = 0x0014
 	wmMouseActivate  = 0x0021
 	wmNCHitTest      = 0x0084
+	wmTimer          = 0x0113
 	wmLButtonUp      = 0x0202
 	wmAppStatus      = 0x8001
 	wmAppLevel       = 0x8002
+	wmAppError       = 0x8003
 	wsPopup          = 0x80000000
 	wsExToolWindow   = 0x00000080
 	wsExNoActivate   = 0x08000000
@@ -43,6 +45,8 @@ const (
 	statusIdle       = 0
 	statusRecording  = 1
 	statusProcessing = 2
+	statusError      = 3
+	errorTimerID     = 1
 	pinHitWidth      = 48
 	hwndTopmost      = ^uintptr(0)
 	hwndNotTopmost   = ^uintptr(1)
@@ -71,6 +75,8 @@ var (
 	procFillRect        = user32.NewProc("FillRect")
 	procLoadCursor      = user32.NewProc("LoadCursorW")
 	procSetWindowRgn    = user32.NewProc("SetWindowRgn")
+	procSetTimer        = user32.NewProc("SetTimer")
+	procKillTimer       = user32.NewProc("KillTimer")
 	procGetModuleHandle = kernel32.NewProc("GetModuleHandleW")
 	procCreateBrush     = gdi32.NewProc("CreateSolidBrush")
 	procDeleteObject    = gdi32.NewProc("DeleteObject")
@@ -181,6 +187,13 @@ func (o *Overlay) SetLevel(level float32) {
 	_, _, _ = procPostMessage.Call(o.window, wmAppLevel, uintptr(level*1000), 0)
 }
 
+func (o *Overlay) SetError() {
+	if o == nil || o.window == 0 {
+		return
+	}
+	_, _, _ = procPostMessage.Call(o.window, wmAppError, 0, 0)
+}
+
 func (o *Overlay) Close() {
 	if o != nil && o.window != 0 {
 		_, _, _ = procPostMessage.Call(o.window, wmClose, 0, 0)
@@ -266,6 +279,7 @@ func windowProc(window uintptr, message uint32, wParam, lParam uintptr) uintptr 
 
 	switch message {
 	case wmAppStatus:
+		_, _, _ = procKillTimer.Call(window, errorTimerID)
 		state.status = int(wParam)
 		if state.status == statusRecording {
 			state.history = [12]float32{}
@@ -274,6 +288,12 @@ func windowProc(window uintptr, message uint32, wParam, lParam uintptr) uintptr 
 			applyPinState(window, false)
 			_, _, _ = procShowWindow.Call(window, swHide)
 		}
+		invalidate(window)
+		return 0
+	case wmAppError:
+		state.status = statusError
+		positionAndShow(window, state)
+		_, _, _ = procSetTimer.Call(window, errorTimerID, 5000, 0)
 		invalidate(window)
 		return 0
 	case wmAppLevel:
@@ -303,6 +323,18 @@ func windowProc(window uintptr, message uint32, wParam, lParam uintptr) uintptr 
 		return htCaption
 	case wmMouseActivate:
 		return maNoActivate
+	case wmTimer:
+		if wParam == errorTimerID {
+			_, _, _ = procKillTimer.Call(window, errorTimerID)
+			state.status = statusIdle
+			if state.pinned {
+				invalidate(window)
+			} else {
+				applyPinState(window, false)
+				_, _, _ = procShowWindow.Call(window, swHide)
+			}
+		}
+		return 0
 	case wmPaint:
 		paintWindow(window, state)
 		return 0
@@ -400,6 +432,9 @@ func paintWindow(window uintptr, state *windowState) {
 	case statusProcessing:
 		label = "Transcribing..."
 		labelColor = rgb(116, 205, 255)
+	case statusError:
+		label = "Error - see log"
+		labelColor = rgb(251, 146, 60)
 	}
 	_, _, _ = procSetTextColor.Call(context, labelColor)
 	textOut(context, 16, 26, label)
@@ -409,6 +444,8 @@ func paintWindow(window uintptr, state *windowState) {
 	for i, value := range state.history {
 		if state.status == statusProcessing {
 			value = float32((i%4)+2) / 6
+		} else if state.status == statusError {
+			value = 0.18
 		} else if state.status == statusIdle {
 			value = 0.12
 		}

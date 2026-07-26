@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -97,24 +98,34 @@ func (c *Controller) Toggle() error {
 func (c *Controller) capture(ctx context.Context) {
 	samples, err := c.recorder.Record(ctx, c.onLevel)
 	if err != nil && !errors.Is(err, context.Canceled) {
-		c.onError(fmt.Errorf("record audio: %w", err))
 		c.finish(Idle)
+		c.onError(fmt.Errorf("record audio: %w", err))
 		return
 	}
 	if len(samples) == 0 {
 		c.finish(Idle)
 		return
 	}
+	log.Printf(
+		"captured audio: samples=%d duration=%.2fs",
+		len(samples),
+		float64(len(samples))/16000,
+	)
 
 	c.finish(Transcribing)
 	transcribeCtx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 	text, err := c.transcriber.Transcribe(transcribeCtx, samples)
+	if err == nil {
+		log.Printf("transcription complete: characters=%d", len([]rune(strings.TrimSpace(text))))
+	}
 	if err == nil && strings.TrimSpace(text) != "" {
 		err = c.injector.Type(strings.TrimSpace(text) + " ")
 	}
 	if err != nil {
+		c.finish(Idle)
 		c.onError(err)
+		return
 	}
 	c.finish(Idle)
 }
