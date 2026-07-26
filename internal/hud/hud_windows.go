@@ -17,15 +17,21 @@ const (
 	wmPaint          = 0x000F
 	wmClose          = 0x0010
 	wmEraseBkgnd     = 0x0014
+	wmMouseActivate  = 0x0021
+	wmNCHitTest      = 0x0084
 	wmLButtonUp      = 0x0202
 	wmAppStatus      = 0x8001
 	wmAppLevel       = 0x8002
 	wsPopup          = 0x80000000
 	wsExToolWindow   = 0x00000080
-	wsExTopmost      = 0x00000008
 	wsExNoActivate   = 0x08000000
+	htClient         = 1
+	htCaption        = 2
+	maNoActivate     = 3
 	swHide           = 0
 	swShowNoActivate = 4
+	swpNoSize        = 0x0001
+	swpNoMove        = 0x0002
 	swpNoActivate    = 0x0010
 	swpShowWindow    = 0x0040
 	colorWindow      = 5
@@ -37,6 +43,9 @@ const (
 	statusIdle       = 0
 	statusRecording  = 1
 	statusProcessing = 2
+	pinHitWidth      = 48
+	hwndTopmost      = ^uintptr(0)
+	hwndNotTopmost   = ^uintptr(1)
 )
 
 var (
@@ -80,9 +89,10 @@ type Overlay struct {
 }
 
 type windowState struct {
-	status  int
-	pinned  bool
-	history [12]float32
+	status     int
+	pinned     bool
+	positioned bool
+	history    [12]float32
 }
 
 type point struct {
@@ -207,7 +217,7 @@ func runWindow(ready chan<- struct {
 
 	title, _ := syscall.UTF16PtrFromString("VoxSteer")
 	window, _, createErr := procCreateWindow.Call(
-		wsExTopmost|wsExToolWindow|wsExNoActivate,
+		wsExToolWindow|wsExNoActivate,
 		uintptr(unsafe.Pointer(className)),
 		uintptr(unsafe.Pointer(title)),
 		wsPopup,
@@ -259,8 +269,9 @@ func windowProc(window uintptr, message uint32, wParam, lParam uintptr) uintptr 
 		state.status = int(wParam)
 		if state.status == statusRecording {
 			state.history = [12]float32{}
-			positionAndShow(window)
+			positionAndShow(window, state)
 		} else if state.status == statusIdle && !state.pinned {
+			applyPinState(window, false)
 			_, _, _ = procShowWindow.Call(window, swHide)
 		}
 		invalidate(window)
@@ -273,11 +284,25 @@ func windowProc(window uintptr, message uint32, wParam, lParam uintptr) uintptr 
 		return 0
 	case wmLButtonUp:
 		x := int(int16(lParam & 0xffff))
-		if x >= hudWidth-48 {
+		if x >= hudWidth-pinHitWidth {
 			state.pinned = !state.pinned
+			applyPinState(window, state.pinned || state.status != statusIdle)
+			if !state.pinned && state.status == statusIdle {
+				_, _, _ = procShowWindow.Call(window, swHide)
+			}
 			invalidate(window)
 		}
 		return 0
+	case wmNCHitTest:
+		screenX := int32(int16(lParam & 0xffff))
+		var bounds rect
+		ok, _, _ := procGetWindowRect.Call(window, uintptr(unsafe.Pointer(&bounds)))
+		if ok != 0 && screenX >= bounds.Right-pinHitWidth {
+			return htClient
+		}
+		return htCaption
+	case wmMouseActivate:
+		return maNoActivate
 	case wmPaint:
 		paintWindow(window, state)
 		return 0
@@ -296,22 +321,29 @@ func windowProc(window uintptr, message uint32, wParam, lParam uintptr) uintptr 
 	return result
 }
 
-func positionAndShow(window uintptr) {
-	foreground, _, _ := procGetForeground.Call()
-	var target rect
-	if foreground != 0 {
-		ok, _, _ := procGetWindowRect.Call(foreground, uintptr(unsafe.Pointer(&target)))
-		if ok == 0 {
+func positionAndShow(window uintptr, state *windowState) {
+	x, y := int32(0), int32(0)
+	flags := uintptr(swpNoActivate | swpShowWindow)
+	if state.positioned {
+		flags |= swpNoMove
+	} else {
+		foreground, _, _ := procGetForeground.Call()
+		var target rect
+		if foreground != 0 {
+			ok, _, _ := procGetWindowRect.Call(foreground, uintptr(unsafe.Pointer(&target)))
+			if ok == 0 {
+				target = rect{Left: 0, Top: 0, Right: 1280, Bottom: 720}
+			}
+		} else {
 			target = rect{Left: 0, Top: 0, Right: 1280, Bottom: 720}
 		}
-	} else {
-		target = rect{Left: 0, Top: 0, Right: 1280, Bottom: 720}
+		x = target.Left + (target.Right-target.Left-hudWidth)/2
+		y = target.Top + 28
+		state.positioned = true
 	}
-	x := target.Left + (target.Right-target.Left-hudWidth)/2
-	y := target.Top + 28
 	_, _, _ = procSetWindowPos.Call(
 		window,
-		^uintptr(0),
+		hwndTopmost,
 		uintptr(x),
 		uintptr(y),
 		hudWidth,
@@ -319,6 +351,22 @@ func positionAndShow(window uintptr) {
 		swpNoActivate|swpShowWindow,
 	)
 	_, _, _ = procShowWindow.Call(window, swShowNoActivate)
+}
+
+func applyPinState(window uintptr, pinned bool) {
+	insertAfter := hwndNotTopmost
+	if pinned {
+		insertAfter = hwndTopmost
+	}
+	_, _, _ = procSetWindowPos.Call(
+		window,
+		insertAfter,
+		0,
+		0,
+		0,
+		0,
+		swpNoMove|swpNoSize|swpNoActivate,
+	)
 }
 
 func invalidate(window uintptr) {

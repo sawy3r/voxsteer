@@ -112,7 +112,9 @@ of the active window. Its bars follow the live microphone level and its label
 changes while transcription is being processed. The widget does not take focus,
 so typing still returns to the original application. Click **pin** on the right
 while it is visible to keep it on top between recordings; click **PIN** again
-to return to automatic hiding.
+to return to automatic hiding. Drag anywhere outside the pin control to move
+the widget. VoxSteer remembers that position for the rest of the session, and
+the activation shortcut always raises it while listening or transcribing.
 
 For a complete local bundle, run one of:
 
