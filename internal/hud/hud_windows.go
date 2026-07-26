@@ -3,6 +3,7 @@
 package hud
 
 import (
+	_ "embed"
 	"fmt"
 	"runtime"
 	"sync"
@@ -38,6 +39,10 @@ const (
 	colorWindow      = 5
 	transparentMode  = 1
 	defaultGUIFont   = 17
+	defaultCharset   = 1
+	clearTypeQuality = 5
+	fontWeightNormal = 400
+	interFontHeight  = -16
 	idcArrow         = 32512
 	hudWidth         = 268
 	hudHeight        = 68
@@ -51,45 +56,54 @@ const (
 	hwndNotTopmost   = ^uintptr(1)
 )
 
+// Inter is loaded privately for this process. It is not installed into the
+// user's Windows font collection.
+//
+//go:embed assets/Inter-Regular.ttf
+var interRegularFont []byte
+
 var (
-	user32              = windows.NewLazySystemDLL("user32.dll")
-	gdi32               = windows.NewLazySystemDLL("gdi32.dll")
-	kernel32            = windows.NewLazySystemDLL("kernel32.dll")
-	procRegisterClass   = user32.NewProc("RegisterClassExW")
-	procCreateWindow    = user32.NewProc("CreateWindowExW")
-	procDefWindowProc   = user32.NewProc("DefWindowProcW")
-	procDestroyWindow   = user32.NewProc("DestroyWindow")
-	procGetMessage      = user32.NewProc("GetMessageW")
-	procTranslateMsg    = user32.NewProc("TranslateMessage")
-	procDispatchMsg     = user32.NewProc("DispatchMessageW")
-	procPostMessage     = user32.NewProc("PostMessageW")
-	procPostQuit        = user32.NewProc("PostQuitMessage")
-	procShowWindow      = user32.NewProc("ShowWindow")
-	procSetWindowPos    = user32.NewProc("SetWindowPos")
-	procGetForeground   = user32.NewProc("GetForegroundWindow")
-	procGetCursorPos    = user32.NewProc("GetCursorPos")
-	procGetWindowRect   = user32.NewProc("GetWindowRect")
-	procSetCapture      = user32.NewProc("SetCapture")
-	procReleaseCapture  = user32.NewProc("ReleaseCapture")
-	procInvalidateRect  = user32.NewProc("InvalidateRect")
-	procBeginPaint      = user32.NewProc("BeginPaint")
-	procEndPaint        = user32.NewProc("EndPaint")
-	procFillRect        = user32.NewProc("FillRect")
-	procLoadCursor      = user32.NewProc("LoadCursorW")
-	procSetWindowRgn    = user32.NewProc("SetWindowRgn")
-	procSetTimer        = user32.NewProc("SetTimer")
-	procKillTimer       = user32.NewProc("KillTimer")
-	procGetModuleHandle = kernel32.NewProc("GetModuleHandleW")
-	procCreateBrush     = gdi32.NewProc("CreateSolidBrush")
-	procDeleteObject    = gdi32.NewProc("DeleteObject")
-	procCreateRoundRgn  = gdi32.NewProc("CreateRoundRectRgn")
-	procSetBkMode       = gdi32.NewProc("SetBkMode")
-	procSetTextColor    = gdi32.NewProc("SetTextColor")
-	procGetStockObject  = gdi32.NewProc("GetStockObject")
-	procSelectObject    = gdi32.NewProc("SelectObject")
-	procTextOut         = gdi32.NewProc("TextOutW")
-	windowStates        sync.Map
-	windowCallback      = syscall.NewCallback(windowProc)
+	user32                    = windows.NewLazySystemDLL("user32.dll")
+	gdi32                     = windows.NewLazySystemDLL("gdi32.dll")
+	kernel32                  = windows.NewLazySystemDLL("kernel32.dll")
+	procRegisterClass         = user32.NewProc("RegisterClassExW")
+	procCreateWindow          = user32.NewProc("CreateWindowExW")
+	procDefWindowProc         = user32.NewProc("DefWindowProcW")
+	procDestroyWindow         = user32.NewProc("DestroyWindow")
+	procGetMessage            = user32.NewProc("GetMessageW")
+	procTranslateMsg          = user32.NewProc("TranslateMessage")
+	procDispatchMsg           = user32.NewProc("DispatchMessageW")
+	procPostMessage           = user32.NewProc("PostMessageW")
+	procPostQuit              = user32.NewProc("PostQuitMessage")
+	procShowWindow            = user32.NewProc("ShowWindow")
+	procSetWindowPos          = user32.NewProc("SetWindowPos")
+	procGetForeground         = user32.NewProc("GetForegroundWindow")
+	procGetCursorPos          = user32.NewProc("GetCursorPos")
+	procGetWindowRect         = user32.NewProc("GetWindowRect")
+	procSetCapture            = user32.NewProc("SetCapture")
+	procReleaseCapture        = user32.NewProc("ReleaseCapture")
+	procInvalidateRect        = user32.NewProc("InvalidateRect")
+	procBeginPaint            = user32.NewProc("BeginPaint")
+	procEndPaint              = user32.NewProc("EndPaint")
+	procFillRect              = user32.NewProc("FillRect")
+	procLoadCursor            = user32.NewProc("LoadCursorW")
+	procSetWindowRgn          = user32.NewProc("SetWindowRgn")
+	procSetTimer              = user32.NewProc("SetTimer")
+	procKillTimer             = user32.NewProc("KillTimer")
+	procGetModuleHandle       = kernel32.NewProc("GetModuleHandleW")
+	procAddFontMemResource    = gdi32.NewProc("AddFontMemResourceEx")
+	procRemoveFontMemResource = gdi32.NewProc("RemoveFontMemResourceEx")
+	procCreateFont            = gdi32.NewProc("CreateFontW")
+	procCreateBrush           = gdi32.NewProc("CreateSolidBrush")
+	procDeleteObject          = gdi32.NewProc("DeleteObject")
+	procCreateRoundRgn        = gdi32.NewProc("CreateRoundRectRgn")
+	procSetBkMode             = gdi32.NewProc("SetBkMode")
+	procSetTextColor          = gdi32.NewProc("SetTextColor")
+	procGetStockObject        = gdi32.NewProc("GetStockObject")
+	procSelectObject          = gdi32.NewProc("SelectObject")
+	procTextOut               = gdi32.NewProc("TextOutW")
+	windowStates              sync.Map
+	windowCallback            = syscall.NewCallback(windowProc)
 )
 
 type Overlay struct {
@@ -102,6 +116,7 @@ type windowState struct {
 	positioned bool
 	dragging   bool
 	pinPressed bool
+	font       uintptr
 	dragOffset point
 	history    [12]float32
 }
@@ -213,6 +228,17 @@ func runWindow(ready chan<- struct {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
+	fontResource, font, err := loadInterFont()
+	if err != nil {
+		ready <- struct {
+			window uintptr
+			err    error
+		}{err: err}
+		return
+	}
+	defer procRemoveFontMemResource.Call(fontResource)
+	defer procDeleteObject.Call(font)
+
 	className, _ := syscall.UTF16PtrFromString("VoxSteerRecordingHUD")
 	instance, _, _ := procGetModuleHandle.Call(0)
 	cursor, _, _ := procLoadCursor.Call(0, idcArrow)
@@ -255,7 +281,7 @@ func runWindow(ready chan<- struct {
 		}{err: fmt.Errorf("create recording HUD: %w", createErr)}
 		return
 	}
-	windowStates.Store(window, &windowState{})
+	windowStates.Store(window, &windowState{font: font})
 	region, _, _ := procCreateRoundRgn.Call(0, 0, hudWidth+1, hudHeight+1, 18, 18)
 	_, _, _ = procSetWindowRgn.Call(window, region, 1)
 	ready <- struct {
@@ -478,7 +504,10 @@ func paintWindow(window uintptr, state *windowState) {
 	_, _, _ = procFillRect.Call(context, uintptr(unsafe.Pointer(&full)), background)
 	_, _, _ = procDeleteObject.Call(background)
 
-	font, _, _ := procGetStockObject.Call(defaultGUIFont)
+	font := state.font
+	if font == 0 {
+		font, _, _ = procGetStockObject.Call(defaultGUIFont)
+	}
 	oldFont, _, _ := procSelectObject.Call(context, font)
 	defer procSelectObject.Call(context, oldFont)
 	_, _, _ = procSetBkMode.Call(context, transparentMode)
@@ -526,6 +555,47 @@ func paintWindow(window uintptr, state *windowState) {
 		_, _, _ = procSetTextColor.Call(context, rgb(100, 116, 139))
 		textOut(context, hudWidth-38, 26, "pin")
 	}
+}
+
+func loadInterFont() (uintptr, uintptr, error) {
+	if len(interRegularFont) == 0 {
+		return 0, 0, fmt.Errorf("load Inter font: embedded font is empty")
+	}
+
+	var fontsAdded uint32
+	resource, _, resourceErr := procAddFontMemResource.Call(
+		uintptr(unsafe.Pointer(&interRegularFont[0])),
+		uintptr(len(interRegularFont)),
+		0,
+		uintptr(unsafe.Pointer(&fontsAdded)),
+	)
+	if resource == 0 || fontsAdded == 0 {
+		return 0, 0, fmt.Errorf("register Inter font: %w", resourceErr)
+	}
+
+	face, _ := syscall.UTF16PtrFromString("Inter")
+	height := int32(interFontHeight)
+	font, _, fontErr := procCreateFont.Call(
+		uintptr(height),
+		0,
+		0,
+		0,
+		fontWeightNormal,
+		0,
+		0,
+		0,
+		defaultCharset,
+		0,
+		0,
+		clearTypeQuality,
+		0,
+		uintptr(unsafe.Pointer(face)),
+	)
+	if font == 0 {
+		_, _, _ = procRemoveFontMemResource.Call(resource)
+		return 0, 0, fmt.Errorf("create Inter HUD font: %w", fontErr)
+	}
+	return resource, font, nil
 }
 
 func textOut(context uintptr, x, y int, text string) {

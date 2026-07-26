@@ -61,6 +61,7 @@ Name: "reconfigure"; Description: "Reconfigure VoxSteer (replaces the existing s
 [Files]
 Source: "{#BundleDir}\voxsteer.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourcePath}\..\cmd\voxsteer\assets\voxsteer.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourcePath}\..\internal\hud\assets\Inter-OFL.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 #if Architecture == "amd64"
 Source: "{#RuntimeURL}"; DestName: "whisper-cuda.zip"; DestDir: "{app}\whisper"; Tasks: local; Hash: "{#RuntimeSHA256}"; ExternalSize: {#RuntimeSize}; Flags: external download extractarchive ignoreversion recursesubdirs createallsubdirs
 #else
