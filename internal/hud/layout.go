@@ -1,28 +1,26 @@
 package hud
 
 const (
-	labelLeft     = 16
-	labelWaveGap  = 12
-	minWaveLeft   = 100
-	waveBarWidth  = 4
-	minWaveBarGap = 1
+	hudTextLeft       = 16
+	hudTextTop        = 11
+	hudTextHeight     = 20
+	waveformLeft      = 16
+	waveformCenter    = 50
+	waveformMaxHeight = 22
+	waveformBarWidth  = 4
 )
 
-func waveformLayout(labelWidth, waveRight, barCount int) (left, step int, visible bool) {
-	left = minWaveLeft
-	if afterLabel := labelLeft + labelWidth + labelWaveGap; afterLabel > left {
-		left = afterLabel
-	}
-	if barCount <= 0 || waveRight-left < waveBarWidth {
-		return left, 0, false
+func waveformLayout(right, barCount int) (step int, visible bool) {
+	if barCount <= 0 || right-waveformLeft < waveformBarWidth {
+		return 0, false
 	}
 	if barCount == 1 {
-		return left, 0, true
+		return 0, true
 	}
 
-	step = (waveRight - left - waveBarWidth) / (barCount - 1)
-	if step < waveBarWidth+minWaveBarGap {
-		return left, step, false
+	step = (right - waveformLeft - waveformBarWidth) / (barCount - 1)
+	if step <= waveformBarWidth {
+		return step, false
 	}
-	return left, step, true
+	return step, true
 }

@@ -2,28 +2,25 @@ package hud
 
 import "testing"
 
-func TestWaveformLayoutClearsLabelAndPin(t *testing.T) {
+func TestWaveformLayoutFillsLowerRail(t *testing.T) {
 	const (
-		labelWidth = 101
-		waveRight  = 210
-		barCount   = 12
+		waveRight = 252
+		barCount  = 24
 	)
 
-	left, step, visible := waveformLayout(labelWidth, waveRight, barCount)
+	step, visible := waveformLayout(waveRight, barCount)
 	if !visible {
 		t.Fatal("waveform should fit")
 	}
-	if left < labelLeft+labelWidth+labelWaveGap {
-		t.Fatalf("waveform starts at %d, before label clearance %d", left, labelLeft+labelWidth+labelWaveGap)
-	}
-	if right := left + (barCount-1)*step + waveBarWidth; right > waveRight {
+	if right := waveformLeft + (barCount-1)*step + waveformBarWidth; right > waveRight {
 		t.Fatalf("waveform ends at %d, beyond protected boundary %d", right, waveRight)
 	}
 }
 
-func TestWaveformLayoutHidesWhenLabelConsumesSpace(t *testing.T) {
-	_, _, visible := waveformLayout(181, 210, 12)
-	if visible {
-		t.Fatal("waveform should hide instead of overlapping a long label")
+func TestWaveformRailSitsBelowText(t *testing.T) {
+	textBottom := hudTextTop + hudTextHeight
+	waveformTop := waveformCenter - waveformMaxHeight/2
+	if textBottom >= waveformTop {
+		t.Fatalf("text ends at %d, waveform starts at %d", textBottom, waveformTop)
 	}
 }
