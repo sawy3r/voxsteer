@@ -52,6 +52,7 @@ const (
 	statusError      = 3
 	errorTimerID     = 1
 	pinHitWidth      = 48
+	pinHitHeight     = 34
 	hwndTopmost      = ^uintptr(0)
 	hwndNotTopmost   = ^uintptr(1)
 )
@@ -118,7 +119,7 @@ type windowState struct {
 	pinPressed bool
 	font       uintptr
 	dragOffset point
-	history    [12]float32
+	history    [24]float32
 }
 
 type point struct {
@@ -313,7 +314,7 @@ func windowProc(window uintptr, message uint32, wParam, lParam uintptr) uintptr 
 		_, _, _ = procKillTimer.Call(window, errorTimerID)
 		state.status = int(wParam)
 		if state.status == statusRecording {
-			state.history = [12]float32{}
+			state.history = [24]float32{}
 			positionAndShow(window, state)
 		} else if state.status == statusIdle && !state.pinned {
 			applyPinState(window, false)
@@ -335,7 +336,8 @@ func windowProc(window uintptr, message uint32, wParam, lParam uintptr) uintptr 
 		return 0
 	case wmLButtonDown:
 		x := int(int16(lParam & 0xffff))
-		if x >= hudWidth-pinHitWidth {
+		y := int(int16((lParam >> 16) & 0xffff))
+		if x >= hudWidth-pinHitWidth && x < hudWidth && y >= 0 && y < pinHitHeight {
 			state.pinPressed = true
 			_, _, _ = procSetCapture.Call(window)
 			return 0
@@ -371,9 +373,10 @@ func windowProc(window uintptr, message uint32, wParam, lParam uintptr) uintptr 
 			return 0
 		}
 		x := int(int16(lParam & 0xffff))
+		y := int(int16((lParam >> 16) & 0xffff))
 		if state.pinPressed {
 			_, _, _ = procReleaseCapture.Call()
-			if x >= hudWidth-pinHitWidth {
+			if x >= hudWidth-pinHitWidth && x < hudWidth && y >= 0 && y < pinHitHeight {
 				state.pinned = !state.pinned
 				applyPinState(window, state.pinned || state.status != statusIdle)
 				if !state.pinned && state.status == statusIdle {
@@ -526,11 +529,17 @@ func paintWindow(window uintptr, state *windowState) {
 		labelColor = rgb(251, 146, 60)
 	}
 	_, _, _ = procSetTextColor.Call(context, labelColor)
-	textOut(context, 16, 26, label)
+	textOut(context, hudTextLeft, hudTextTop, label)
+
+	waveRight := hudWidth - 16
+	waveStep, waveVisible := waveformLayout(waveRight, len(state.history))
 
 	waveBrush, _, _ := procCreateBrush.Call(rgb(34, 211, 238))
 	defer procDeleteObject.Call(waveBrush)
 	for i, value := range state.history {
+		if !waveVisible {
+			break
+		}
 		if state.status == statusProcessing {
 			value = float32((i%4)+2) / 6
 		} else if state.status == statusError {
@@ -538,22 +547,23 @@ func paintWindow(window uintptr, state *windowState) {
 		} else if state.status == statusIdle {
 			value = 0.12
 		}
-		height := int32(4 + value*40)
+		height := int32(4 + value*18)
+		left := int32(waveformLeft + i*waveStep)
 		bar := rect{
-			Left:   int32(100 + i*9),
-			Top:    (hudHeight - height) / 2,
-			Right:  int32(105 + i*9),
-			Bottom: (hudHeight + height) / 2,
+			Left:   left,
+			Top:    int32(waveformCenter) - height/2,
+			Right:  left + int32(waveformBarWidth),
+			Bottom: int32(waveformCenter) + height/2,
 		}
 		_, _, _ = procFillRect.Call(context, uintptr(unsafe.Pointer(&bar)), waveBrush)
 	}
 
 	if state.pinned {
 		_, _, _ = procSetTextColor.Call(context, rgb(34, 211, 238))
-		textOut(context, hudWidth-38, 26, "PIN")
+		textOut(context, hudWidth-38, hudTextTop, "PIN")
 	} else {
 		_, _, _ = procSetTextColor.Call(context, rgb(100, 116, 139))
-		textOut(context, hudWidth-38, 26, "pin")
+		textOut(context, hudWidth-38, hudTextTop, "pin")
 	}
 }
 
