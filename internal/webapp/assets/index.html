@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#07152f">
+  <meta name="referrer" content="no-referrer">
+  <title>VoxSteer Browser</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#recorder">Skip to recorder</a>
+
+  <div class="page-shell">
+    <header class="site-header">
+      <div class="brand" aria-label="VoxSteer Browser">
+        <span class="brand-mark" aria-hidden="true">
+          <span class="brand-mic"></span>
+          <span class="brand-wave brand-wave-one"></span>
+          <span class="brand-wave brand-wave-two"></span>
+          <span class="brand-wave brand-wave-three"></span>
+        </span>
+        <span class="brand-name"><strong>Vox</strong>Steer</span>
+        <span class="mode-label">Browser</span>
+      </div>
+
+      <div class="header-tools">
+        <div class="connection-badge" id="connectionBadge" data-state="connecting" role="status" aria-live="polite" aria-atomic="true">
+          <span class="connection-dot" aria-hidden="true"></span>
+          <span id="connectionLabel">Connecting</span>
+        </div>
+        <button class="button button-quiet" id="settingsButton" type="button" aria-haspopup="dialog" aria-controls="settingsDialog" aria-expanded="false">
+          <span class="settings-icon" aria-hidden="true"></span>
+          Settings
+        </button>
+      </div>
+    </header>
+
+    <main id="mainContent">
+      <section class="intro" aria-labelledby="pageTitle">
+        <p class="eyebrow">Your voice at the controls</p>
+        <h1 id="pageTitle">Steer speech into text.</h1>
+        <p class="intro-copy">Record in this browser, review every word, then copy only when you choose.</p>
+      </section>
+
+      <div class="workspace">
+        <section class="recorder-card" id="recorder" tabindex="-1" aria-labelledby="recorderTitle">
+          <div class="card-heading">
+            <div>
+              <p class="section-kicker">Voice capture</p>
+              <h2 id="recorderTitle">Recorder</h2>
+            </div>
+            <p class="session-summary" id="sessionSummary">Preparing session...</p>
+          </div>
+
+          <ol class="pipeline" aria-label="Transcription progress">
+            <li id="captureStep" data-step="capture">
+              <span aria-hidden="true">1</span>
+              Capture
+            </li>
+            <li id="encodeStep" data-step="encode">
+              <span aria-hidden="true">2</span>
+              Shape audio
+            </li>
+            <li id="transcribeStep" data-step="transcribe">
+              <span aria-hidden="true">3</span>
+              Transcribe
+            </li>
+          </ol>
+
+          <div class="recorder-stage" id="recorderStage" data-state="loading">
+            <canvas id="waveform" width="960" height="240" aria-hidden="true"></canvas>
+            <div class="record-control">
+              <button class="record-button" id="startButton" type="button" disabled>
+                <span class="mic-symbol" aria-hidden="true">
+                  <span class="mic-capsule">
+                    <span class="mic-bar mic-bar-one"></span>
+                    <span class="mic-bar mic-bar-two"></span>
+                    <span class="mic-bar mic-bar-three"></span>
+                  </span>
+                  <span class="mic-yoke"></span>
+                </span>
+                <span class="record-button-copy">
+                  <strong>Start</strong>
+                  <small>recording</small>
+                </span>
+              </button>
+
+              <button class="record-button record-button-stop" id="stopButton" type="button" hidden>
+                <span class="stop-symbol" aria-hidden="true"></span>
+                <span class="record-button-copy">
+                  <strong>Stop</strong>
+                  <small>and transcribe</small>
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div class="capture-readout">
+            <div class="timer-block">
+              <span class="readout-label">Elapsed</span>
+              <span class="timer" id="elapsedTime">00:00</span>
+              <span class="timer-limit" id="timerLimit">/ --:--</span>
+            </div>
+            <div class="level-block">
+              <label for="inputLevel">Microphone level</label>
+              <meter id="inputLevel" min="0" max="1" low="0.08" high="0.86" optimum="0.55" value="0">0</meter>
+            </div>
+          </div>
+
+          <div class="status-block" role="status" aria-live="polite" aria-atomic="true">
+            <p class="status-message" id="appStatus">Preparing your secure browser session...</p>
+            <p class="status-detail" id="statusDetail">Microphone access is requested only after you press Start.</p>
+          </div>
+
+          <div class="secondary-controls">
+            <button class="button button-secondary" id="discardButton" type="button" hidden>Discard recording</button>
+            <button class="button button-secondary" id="cancelButton" type="button" hidden>Cancel</button>
+          </div>
+
+          <div class="keyboard-hint">
+            <kbd>Space</kbd>
+            <span>Start or stop when no field or button has focus</span>
+          </div>
+        </section>
+
+        <aside class="trust-card" aria-labelledby="privacyTitle">
+          <div class="trust-mark" aria-hidden="true"><span></span></div>
+          <div>
+            <p class="section-kicker">Browser-first privacy</p>
+            <h2 id="privacyTitle">You stay in the loop.</h2>
+            <p>Audio is captured by this browser and sent only to your configured transcription engine.</p>
+            <p>VoxSteer itself does not use native macOS Microphone, Accessibility, or Input Monitoring permissions. The browser may still require macOS microphone access plus site permission for <strong>127.0.0.1</strong>.</p>
+            <p>No transcript is saved by this page, and copying is always explicit.</p>
+          </div>
+        </aside>
+      </div>
+
+      <section class="transcript-card" aria-labelledby="transcriptTitle">
+        <div class="card-heading transcript-heading">
+          <div>
+            <p class="section-kicker">Review before using</p>
+            <h2 id="transcriptTitle">Transcript</h2>
+          </div>
+          <span class="character-count" id="characterCount">0 characters</span>
+        </div>
+
+        <label class="sr-only" for="transcript">Editable transcript</label>
+        <textarea id="transcript" rows="5" autocomplete="off" autocapitalize="off" autocorrect="off" aria-describedby="transcriptHelp" placeholder="Your transcript will appear here. You can edit it before copying." spellcheck="false"></textarea>
+        <p class="transcript-help" id="transcriptHelp">Each recording is appended below existing text. Text remains only in this page until you clear it or close the tab.</p>
+
+        <div class="transcript-actions">
+          <button class="button button-primary" id="copyButton" type="button" disabled>Copy transcript</button>
+          <button class="button button-secondary" id="clearButton" type="button" disabled>Clear</button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>VoxSteer browser mode</p>
+      <div class="footer-actions">
+        <button class="text-button" id="openLogButton" type="button">Open diagnostic log</button>
+        <button class="text-button text-button-danger" id="quitButton" type="button">Quit VoxSteer</button>
+      </div>
+    </footer>
+  </div>
+
+  <dialog class="settings-dialog" id="settingsDialog" aria-labelledby="settingsTitle" aria-describedby="settingsDescription">
+    <form class="settings-form" id="settingsForm" method="dialog" autocomplete="off">
+      <div class="dialog-header">
+        <div>
+          <p class="section-kicker">Transcription setup</p>
+          <h2 id="settingsTitle">Settings</h2>
+        </div>
+        <button class="button button-quiet dialog-close" id="closeSettingsButton" type="button">Close</button>
+      </div>
+
+      <p class="dialog-description" id="settingsDescription">Choose where this browser sends captured audio. Saved API keys are never displayed.</p>
+      <p class="form-error" id="settingsError" role="alert" hidden></p>
+
+      <fieldset class="form-section">
+        <legend>Engine</legend>
+        <div class="engine-options">
+          <label class="engine-option">
+            <input id="cloudEngine" type="radio" name="engine" value="cloud" required>
+            <span>
+              <strong>Cloud</strong>
+              <small>OpenAI-compatible endpoint</small>
+            </span>
+          </label>
+          <label class="engine-option">
+            <input id="localEngine" type="radio" name="engine" value="local" required>
+            <span>
+              <strong>Local</strong>
+              <small>whisper.cpp on this computer</small>
+            </span>
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="field-row field-row-single">
+        <label for="languageInput">Language</label>
+        <input id="languageInput" name="language" type="text" inputmode="text" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="en (blank for automatic)">
+        <small>Use an ISO language code such as en, fr, or ja. Leave blank for automatic detection.</small>
+      </div>
+
+      <fieldset class="form-section engine-fields" id="cloudSettings">
+        <legend>Cloud connection</legend>
+        <div class="field-row">
+          <label for="cloudEndpointInput">Endpoint</label>
+          <input id="cloudEndpointInput" name="cloud_endpoint" type="url" inputmode="url" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="https://provider.example/v1/audio/transcriptions">
+        </div>
+        <div class="field-row">
+          <label for="cloudModelInput">Model</label>
+          <input id="cloudModelInput" name="cloud_model" type="text" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="whisper-1">
+        </div>
+        <div class="field-row">
+          <label for="cloudApiKeyInput">API key</label>
+          <input id="cloudApiKeyInput" name="cloud_api_key" type="password" autocomplete="off" spellcheck="false" aria-describedby="apiKeyHelp apiKeyState" placeholder="Leave blank to keep the saved key">
+          <small id="apiKeyHelp">The field is cleared on submit. A blank value preserves the stored key.</small>
+          <span class="key-state" id="apiKeyState">No saved key reported</span>
+          <label class="checkbox-row" for="clearApiKeyInput">
+            <input id="clearApiKeyInput" type="checkbox">
+            Remove the saved key
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="form-section engine-fields" id="localSettings" hidden>
+        <legend>Local whisper.cpp</legend>
+        <div class="field-row">
+          <label for="localBinaryInput">whisper-cli path</label>
+          <input id="localBinaryInput" name="local_binary" type="text" autocomplete="off" spellcheck="false" placeholder="/path/to/whisper-cli">
+        </div>
+        <div class="field-row">
+          <label for="localModelInput">Model path</label>
+          <input id="localModelInput" name="local_model" type="text" autocomplete="off" spellcheck="false" placeholder="/path/to/model.bin">
+        </div>
+      </fieldset>
+
+      <div class="dialog-actions">
+        <button class="button button-secondary" id="cancelSettingsButton" type="button">Cancel</button>
+        <button class="button button-primary" id="saveSettingsButton" type="submit">Save settings</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+</body>
+</html>

@@ -15,7 +15,6 @@ import (
 	"github.com/sawy3r/voxsteer/internal/hud"
 	"github.com/sawy3r/voxsteer/internal/mousebutton"
 	"github.com/sawy3r/voxsteer/internal/shortcut"
-	"github.com/sawy3r/voxsteer/internal/transcriber"
 	"golang.design/x/hotkey"
 )
 
@@ -35,7 +34,7 @@ func run(logPath string) error {
 	if err != nil {
 		return err
 	}
-	engine, err := configuredEngine(cfg)
+	engine, err := app.ConfiguredEngine(cfg)
 	if err != nil {
 		if configPath == "" {
 			return fmt.Errorf("%w; create config.json beside the executable or set VTT_CONFIG", err)
@@ -212,30 +211,4 @@ func hotkeyKey(key string) (hotkey.Key, error) {
 		return 0, fmt.Errorf("unsupported shortcut key %q", key)
 	}
 	return value, nil
-}
-
-func configuredEngine(cfg config.Config) (transcriber.Transcriber, error) {
-	switch cfg.Engine {
-	case "cloud":
-		if cfg.Cloud.Endpoint == "" {
-			return nil, fmt.Errorf("VTT_CLOUD_ENDPOINT is required for the cloud engine")
-		}
-		return &transcriber.Cloud{
-			Endpoint: cfg.Cloud.Endpoint,
-			APIKey:   cfg.Cloud.APIKey,
-			Model:    cfg.Cloud.Model,
-			Language: cfg.Language,
-		}, nil
-	case "local":
-		if cfg.Local.Model == "" {
-			return nil, fmt.Errorf("VTT_WHISPER_MODEL is required for the local engine")
-		}
-		return &transcriber.LocalWhisper{
-			Binary:   cfg.Local.Binary,
-			Model:    cfg.Local.Model,
-			Language: cfg.Language,
-		}, nil
-	default:
-		return nil, fmt.Errorf("VTT_ENGINE must be cloud or local")
-	}
 }

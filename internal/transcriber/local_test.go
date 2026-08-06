@@ -50,6 +50,21 @@ func TestLocalWhisperTreatsZeroExitStderrErrorAsFailure(t *testing.T) {
 	}
 }
 
+func TestLocalWhisperBoundsProcessOutput(t *testing.T) {
+	dir := t.TempDir()
+	binary := filepath.Join(dir, "fake-whisper")
+	script := "#!/bin/sh\ndd if=/dev/zero bs=1048577 count=1 2>/dev/null\n"
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	engine := &LocalWhisper{Binary: binary, Model: filepath.Join(dir, "model.bin")}
+	text, err := engine.Transcribe(context.Background(), []float32{0.1})
+	if err == nil || !strings.Contains(err.Error(), "output exceeded") {
+		t.Fatalf("error = %v, output bytes = %d", err, len(text))
+	}
+}
+
 func TestWhisperLanguageNormalizesRegionalTags(t *testing.T) {
 	tests := map[string]string{
 		"en-AU": "en",

@@ -23,6 +23,25 @@ type Cloud struct {
 	Client   *http.Client
 }
 
+// EndpointError preserves provider diagnostics for callers while exposing a
+// separate summary that is safe to write to operational logs.
+type EndpointError struct {
+	StatusCode int
+	Status     string
+	Details    string
+}
+
+func (e *EndpointError) Error() string {
+	if e.Details == "" {
+		return fmt.Sprintf("transcription endpoint returned %s", e.Status)
+	}
+	return fmt.Sprintf("transcription endpoint returned %s: %s", e.Status, e.Details)
+}
+
+func (e *EndpointError) SafeSummary() string {
+	return fmt.Sprintf("endpoint returned HTTP %d", e.StatusCode)
+}
+
 func (c *Cloud) Transcribe(ctx context.Context, samples []float32) (string, error) {
 	wav, err := appaudio.EncodeWAV(samples)
 	if err != nil {
@@ -74,7 +93,11 @@ func (c *Cloud) Transcribe(ctx context.Context, samples []float32) (string, erro
 		return "", fmt.Errorf("read transcription response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("transcription endpoint returned %s: %s", resp.Status, strings.TrimSpace(string(responseBody)))
+		return "", &EndpointError{
+			StatusCode: resp.StatusCode,
+			Status:     resp.Status,
+			Details:    strings.TrimSpace(string(responseBody)),
+		}
 	}
 
 	var result struct {

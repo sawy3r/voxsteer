@@ -68,15 +68,70 @@ func configPath() (path string, required bool, err error) {
 		}
 	}
 
-	configDir, err := os.UserConfigDir()
+	userPath, err := UserPath()
 	if err != nil {
 		return "", false, nil
 	}
-	userPath := filepath.Join(configDir, "VoxSteer", "config.json")
 	if _, statErr := os.Stat(userPath); statErr == nil {
 		return userPath, false, nil
 	}
 	return "", false, nil
+}
+
+// UserPath returns the per-user configuration path for VoxSteer.
+func UserPath() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(configDir, "VoxSteer", "config.json"), nil
+}
+
+// SaveUser writes cfg to the per-user configuration file. On Unix systems the
+// final rename is atomic and the file is restricted to the current user.
+func SaveUser(cfg Config) (string, error) {
+	path, err := UserPath()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return "", err
+	}
+
+	file, err := os.CreateTemp(dir, ".config-*.tmp")
+	if err != nil {
+		return "", err
+	}
+	tempPath := file.Name()
+	defer os.Remove(tempPath)
+	if err := file.Chmod(0o600); err != nil {
+		_ = file.Close()
+		return "", err
+	}
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(cfg); err != nil {
+		_ = file.Close()
+		return "", err
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 func decode(path string, cfg *Config) error {
@@ -85,10 +140,24 @@ func decode(path string, cfg *Config) error {
 		return err
 	}
 	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if info.Size() > 1<<20 {
+		return fmt.Errorf("decode %s: configuration exceeds 1 MiB", path)
+	}
 
 	decoder := json.NewDecoder(io.LimitReader(file, 1<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(cfg); err != nil {
+		return fmt.Errorf("decode %s: %w", path, err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("decode %s: multiple JSON values", path)
+		}
 		return fmt.Errorf("decode %s: %w", path, err)
 	}
 	return nil

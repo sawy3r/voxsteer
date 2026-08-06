@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Go ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - run: go test ./...
+
+      - run: go vet ./...
+
+      - if: runner.os != 'Windows'
+        run: go test -race ./...
+
+      - if: runner.os == 'macOS'
+        run: go test -tags desktop ./...
+
+  macos-browser-bundle:
+    name: macOS browser bundle
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Verify browser JavaScript
+        run: |
+          node --check internal/webapp/assets/app.js
+          node --check internal/webapp/assets/recorder-worklet.js
+          node scripts/test-recorder-worklet.mjs
+
+      - name: Build ad-hoc Universal 2 bundle
+        env:
+          VERSION: 0.0.0
+          BUILD_NUMBER: ${{ github.run_number }}
+          MACOS_SIGN_IDENTITY: "-"
+        run: bash scripts/build-macos-browser.sh
+
+      - name: Verify bundle
+        run: |
+          app="dist/macos-browser/VoxSteer Browser.app"
+          dmg="dist/macos-browser/voxsteer-0.0.0-macos-universal-browser.dmg"
+          archs=" $(lipo -archs "$app/Contents/MacOS/voxsteer-browser") "
+          [[ "$archs" == *" x86_64 "* ]]
+          [[ "$archs" == *" arm64 "* ]]
+          plutil -lint "$app/Contents/Info.plist"
+          test "$(plutil -extract LSMinimumSystemVersion raw "$app/Contents/Info.plist")" = "13.0"
+          ! plutil -extract NSMicrophoneUsageDescription raw "$app/Contents/Info.plist"
+          codesign --verify --strict --verbose=2 "$app"
+          hdiutil verify "$dmg"

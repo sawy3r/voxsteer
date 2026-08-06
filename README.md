@@ -8,6 +8,12 @@ again, and the transcription is typed into the focused application without
 using the clipboard. VoxSteer is cloud-first, with optional local Whisper
 transcription for private and offline use.
 
+For managed Macs that do not allow a new application to receive native
+microphone or input-control permission, VoxSteer also ships a browser mode. The
+browser records audio using its existing permission, VoxSteer transcribes it on
+the loopback interface, and the user explicitly copies the result for manual
+paste.
+
 ## Architecture
 
 The orchestration, WAV encoding, cloud client, and local engine adapter are pure
@@ -22,6 +28,15 @@ captured shortcut / mouse button → microphone → cloud or whisper.cpp → nat
 
 Windows uses WASAPI and `SendInput` directly and builds without CGO. macOS and
 Linux use miniaudio and RobotGo behind the same interfaces.
+
+Browser mode is a separate CGO-free executable. It never opens an audio device,
+monitors input, or injects keys:
+
+```text
+browser microphone → 16 kHz mono WAV → loopback-only Go service → cloud or whisper.cpp
+                                                              ↓
+                                                    review and explicit copy
+```
 
 The local adapter executes a `whisper-cli` built from the official whisper.cpp
 project. This keeps CUDA/Vulkan/Metal build choices outside the Go module and
@@ -60,6 +75,57 @@ make build-desktop
 ```
 
 Optional: set `VTT_LANGUAGE` to an ISO language code.
+
+## Browser mode for managed macOS
+
+Browser mode avoids native macOS Microphone, Accessibility, and Input
+Monitoring permission. It still requires the selected browser to have
+microphone access and the user to allow the `127.0.0.1` site when prompted.
+
+Build and launch the Universal 2 application:
+
+```sh
+VERSION=0.3.0 BUILD_NUMBER=1 make build-macos-browser
+open "dist/macos-browser/VoxSteer Browser.app"
+```
+
+The page opens Settings when transcription is not configured. Cloud API keys
+are sent only to the loopback service, written to the private per-user
+`config.json`, and never returned to the page. Local mode accepts an existing
+`whisper-cli` and model path.
+
+The browser page provides recording duration, a live input meter, cancellation,
+an editable transcript, and an explicit Copy action. It deliberately does not
+overwrite the clipboard automatically. Paste into the destination with
+`Cmd+V`.
+
+The service binds only `127.0.0.1:47823`. Every API request requires an
+ephemeral token delivered in the URL fragment, an exact loopback Host, a
+same-origin request, and a loopback peer. Audio is bounded to ten minutes and
+only canonical 16 kHz mono PCM WAV is accepted. The token, API key, audio, and
+transcript are not logged.
+
+For a command-line developer build:
+
+```sh
+make build-browser
+./bin/voxsteer-browser
+```
+
+An ad-hoc local build exercises the complete app layout but is not suitable for
+external distribution. Release builds use a Developer ID identity:
+
+```sh
+VERSION=0.3.0 BUILD_NUMBER=1 \
+MACOS_SIGN_IDENTITY="Developer ID Application: Example (TEAMID)" \
+bash scripts/build-macos-browser.sh
+```
+
+`scripts/notarize-macos-browser.sh` notarizes and staples both the application
+and DMG using an App Store Connect API key or a configured notarytool keychain
+profile. Tagged GitHub releases require the signing and notarization secrets
+declared in `.github/workflows/release.yml`; manual workflow runs can produce an
+explicitly ad-hoc preview.
 
 ## Windows
 
@@ -156,7 +222,8 @@ executable. Relative Whisper paths are resolved from that file. Existing
   Wayland deliberately prevents arbitrary applications from typing into other
   clients.
 - macOS: Xcode command-line tools. Grant Accessibility, Input Monitoring, and
-  microphone permissions.
+  microphone permissions for native desktop mode. Browser mode requires none
+  of these permissions for the VoxSteer process.
 - Windows: no C compiler is needed for the Go application. Building local
   whisper.cpp requires Visual Studio C++ Build Tools; the RTX 3090 build also
   requires the NVIDIA CUDA Toolkit. Grant microphone access under
@@ -176,9 +243,15 @@ text. Use **Open diagnostic log** in the VoxSteer tray menu rather than
 navigating AppData manually. A transcription failure also appears briefly in
 the recording widget.
 
+Browser mode writes diagnostics to
+`~/Library/Application Support/VoxSteer/voxsteer-browser.log` on macOS. Use
+**Open diagnostic log** in the browser page. It records engine, duration, and
+errors, but never audio, API keys, session tokens, or transcript text.
+
 ```sh
 go test ./...
 go test -race ./...
+go test -tags desktop ./...
 ```
 
 ## Third-party assets

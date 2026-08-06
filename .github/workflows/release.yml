@@ -12,7 +12,7 @@ on:
         default: "0.2.0"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   windows-installers:
@@ -34,11 +34,18 @@ jobs:
 
       - name: Resolve version
         shell: pwsh
+        env:
+          VOXSTEER_REF_TYPE: ${{ github.ref_type }}
+          VOXSTEER_REF_NAME: ${{ github.ref_name }}
+          VOXSTEER_INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if ("${{ github.ref_type }}" -eq "tag") {
-            $version = "${{ github.ref_name }}".TrimStart("v")
+          if ($env:VOXSTEER_REF_TYPE -eq "tag") {
+            $version = $env:VOXSTEER_REF_NAME.TrimStart("v")
           } else {
-            $version = "${{ inputs.version }}"
+            $version = $env:VOXSTEER_INPUT_VERSION
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Version must contain three numeric components"
           }
           "VOXSTEER_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
 
@@ -66,17 +73,161 @@ jobs:
           path: release/*
           if-no-files-found: error
 
+  macos-browser:
+    name: macOS browser app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve version
+        shell: bash
+        env:
+          VOXSTEER_REF_TYPE: ${{ github.ref_type }}
+          VOXSTEER_REF_NAME: ${{ github.ref_name }}
+          VOXSTEER_INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$VOXSTEER_REF_TYPE" == "tag" ]]; then
+            version="$VOXSTEER_REF_NAME"
+            version="${version#v}"
+          else
+            version="$VOXSTEER_INPUT_VERSION"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            printf 'Version must contain three numeric components\n' >&2
+            exit 1
+          fi
+          printf 'VOXSTEER_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+
+      - name: Verify
+        run: |
+          go test ./...
+          go test -race ./internal/webapp ./internal/audio ./internal/config ./cmd/voxsteer-browser
+
+      - name: Require release signing credentials
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          for name in MACOS_CERTIFICATE_P12 MACOS_CERTIFICATE_PASSWORD MACOS_KEYCHAIN_PASSWORD MACOS_SIGN_IDENTITY APPLE_API_KEY_ID APPLE_API_ISSUER_ID APPLE_API_PRIVATE_KEY; do
+            if [[ -z "${!name}" ]]; then
+              printf 'Missing required secret: %s\n' "$name" >&2
+              exit 1
+            fi
+          done
+
+      - name: Import Developer ID certificate
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          umask 077
+          certificate="$RUNNER_TEMP/developer-id.p12"
+          keychain="$RUNNER_TEMP/voxsteer-build.keychain-db"
+          printf '%s' "$MACOS_CERTIFICATE_P12" | /usr/bin/base64 -D > "$certificate"
+          security create-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$keychain"
+          security import "$certificate" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$MACOS_KEYCHAIN_PASSWORD" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          rm -f "$certificate"
+          printf 'MACOS_KEYCHAIN=%s\n' "$keychain" >> "$GITHUB_ENV"
+
+      - name: Build ad-hoc Universal 2 preview
+        if: github.ref_type != 'tag'
+        shell: bash
+        env:
+          VERSION: ${{ env.VOXSTEER_VERSION }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          MACOS_SIGN_IDENTITY: "-"
+        run: |
+          bash scripts/build-macos-browser.sh
+
+      - name: Build signed Universal 2 app
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          VERSION: ${{ env.VOXSTEER_VERSION }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: bash scripts/build-macos-browser.sh
+
+      - name: Notarize release
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          umask 077
+          api_key="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          trap 'rm -f "$api_key"' EXIT
+          printf '%s' "$APPLE_API_PRIVATE_KEY" > "$api_key"
+          export APPLE_API_KEY_FILE="$api_key"
+          bash scripts/notarize-macos-browser.sh \
+            "dist/macos-browser/VoxSteer Browser.app" \
+            "dist/macos-browser/voxsteer-$VOXSTEER_VERSION-macos-universal-browser.zip" \
+            "dist/macos-browser/voxsteer-$VOXSTEER_VERSION-macos-universal-browser.dmg"
+
+      - name: Clean signing material
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${MACOS_KEYCHAIN:-}" ]]; then
+            security delete-keychain "$MACOS_KEYCHAIN" || true
+          fi
+          rm -f "$RUNNER_TEMP/developer-id.p12" "$RUNNER_TEMP"/AuthKey_*.p8
+
+      - name: Stage release assets
+        shell: bash
+        run: |
+          mkdir -p release
+          cp "dist/macos-browser/voxsteer-$VOXSTEER_VERSION-macos-universal-browser.dmg" release/
+          cp "dist/macos-browser/voxsteer-$VOXSTEER_VERSION-macos-universal-browser.zip" release/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-browser
+          path: release/*
+          if-no-files-found: error
+
   publish:
     name: Publish GitHub release
     if: github.ref_type == 'tag'
-    needs: windows-installers
+    needs:
+      - windows-installers
+      - macos-browser
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v8
         with:
           pattern: windows-*
           path: release
           merge-multiple: true
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: macos-browser
+          path: release
 
       - name: Create checksums
         working-directory: release
@@ -85,9 +236,11 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
         run: |
-          gh release create "${{ github.ref_name }}" release/* \
-            --repo "${{ github.repository }}" \
-            --title "VoxSteer ${{ github.ref_name }}" \
+          gh release create "$RELEASE_TAG" release/* \
+            --repo "$RELEASE_REPOSITORY" \
+            --title "VoxSteer $RELEASE_TAG" \
             --generate-notes \
-            --notes "Use the architecture-specific installer for the guided setup wizard. It creates the configuration automatically and offers cloud or optional local transcription, live keyboard-shortcut capture, Mouse 3/4/5 activation, the VoxSteer tray icon, and a movable, pinnable recording-level widget on Windows. Local Whisper runs without a console window; failures are shown in the HUD and recorded in the private diagnostic log. Existing settings are preserved unless Reconfigure VoxSteer is selected. Portable executables are provided for advanced use."
+            --notes "Windows releases include architecture-specific installers with guided setup, native activation, typing, and the recording HUD. The Universal 2 macOS browser app records through the user's existing browser permission, requires no native microphone or input-monitoring access, and provides explicit transcript copying for manual paste."

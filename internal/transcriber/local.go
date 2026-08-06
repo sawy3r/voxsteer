@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	appaudio "github.com/sawy3r/voxsteer/internal/audio"
 )
@@ -18,6 +19,33 @@ type LocalWhisper struct {
 	Binary   string
 	Model    string
 	Language string
+}
+
+const maxWhisperOutput = 1 << 20
+
+type cappedBuffer struct {
+	buffer   bytes.Buffer
+	limit    int
+	overflow bool
+}
+
+func (b *cappedBuffer) Write(value []byte) (int, error) {
+	written := len(value)
+	remaining := b.limit - b.buffer.Len()
+	if remaining > 0 {
+		if remaining > len(value) {
+			remaining = len(value)
+		}
+		_, _ = b.buffer.Write(value[:remaining])
+	}
+	if remaining < len(value) {
+		b.overflow = true
+	}
+	return written, nil
+}
+
+func (b *cappedBuffer) String() string {
+	return b.buffer.String()
 }
 
 func (l *LocalWhisper) Transcribe(ctx context.Context, samples []float32) (string, error) {
@@ -52,9 +80,15 @@ func (l *LocalWhisper) Transcribe(ctx context.Context, samples []float32) (strin
 	}
 	command := exec.CommandContext(ctx, binary, args...)
 	configureCommand(command)
-	var stderr bytes.Buffer
+	command.WaitDelay = 5 * time.Second
+	stdout := cappedBuffer{limit: maxWhisperOutput}
+	stderr := cappedBuffer{limit: maxWhisperOutput}
+	command.Stdout = &stdout
 	command.Stderr = &stderr
-	output, err := command.Output()
+	err = command.Run()
+	if stdout.overflow || stderr.overflow {
+		return "", fmt.Errorf("whisper.cpp output exceeded %d bytes", maxWhisperOutput)
+	}
 	if err != nil {
 		details := strings.TrimSpace(stderr.String())
 		if details != "" {
@@ -62,7 +96,7 @@ func (l *LocalWhisper) Transcribe(ctx context.Context, samples []float32) (strin
 		}
 		return "", fmt.Errorf("whisper.cpp failed: %w", err)
 	}
-	text := strings.TrimSpace(string(output))
+	text := strings.TrimSpace(stdout.String())
 	if strings.Contains(strings.ToLower(stderr.String()), "error:") {
 		return "", fmt.Errorf("whisper.cpp failed: %s", strings.TrimSpace(stderr.String()))
 	}
