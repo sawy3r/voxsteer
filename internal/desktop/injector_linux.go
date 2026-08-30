@@ -100,9 +100,26 @@ func runTyper(binary, text string, viaStdin bool, args ...string) error {
 	return nil
 }
 
+// InjectionRequirements reports which typing tool is actually available so
+// the startup log states whether dictation can type at all, not just which
+// tools would have been acceptable.
 func InjectionRequirements() string {
 	if waylandSession() {
-		return "Wayland session: typing uses wtype (or ydotool); install one of them"
+		if path, err := exec.LookPath("wtype"); err == nil {
+			return "Wayland session: typing uses wtype (" + path + ")"
+		}
+		if path, err := exec.LookPath("ydotool"); err == nil {
+			return "Wayland session: typing uses ydotool (" + path + "); its ydotoold daemon must be running"
+		}
+		if os.Getenv("DISPLAY") != "" {
+			if path, err := exec.LookPath("xdotool"); err == nil {
+				return "Wayland session: only xdotool (" + path + ") is available, so text reaches XWayland applications only; install wtype for native Wayland windows"
+			}
+		}
+		return "WARNING: no typing tool found, so transcriptions cannot be typed; install wtype (recommended) or ydotool"
 	}
-	return "X11 session: typing uses xdotool; install it if missing"
+	if path, err := exec.LookPath("xdotool"); err == nil {
+		return "X11 session: typing uses xdotool (" + path + ")"
+	}
+	return "WARNING: xdotool was not found, so transcriptions cannot be typed; install xdotool"
 }

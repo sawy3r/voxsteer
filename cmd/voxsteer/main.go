@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -44,7 +45,11 @@ func run(logPath string) error {
 	engine, err := app.ConfiguredEngine(cfg)
 	if err != nil {
 		if configPath == "" {
-			return fmt.Errorf("%w; create config.json beside the executable or set VTT_CONFIG", err)
+			location := "config.json beside the executable"
+			if userPath, pathErr := config.UserPath(); pathErr == nil {
+				location = userPath
+			}
+			return fmt.Errorf("%w; no configuration file was found — create %s (start from config.example.json) or set VTT_CONFIG", err, location)
 		}
 		return fmt.Errorf("%w (configuration: %s)", err, configPath)
 	}
@@ -137,7 +142,10 @@ func startLogging() (string, func(), error) {
 	if err != nil {
 		return "", func() {}, err
 	}
-	log.SetOutput(file)
+	// Mirror the log to stderr so someone launching VoxSteer from a terminal
+	// sees problems immediately instead of having to find the log file. The
+	// file comes first: MultiWriter stops at the first failing writer, and
+	// stderr may be closed when launched from a desktop entry.
+	log.SetOutput(io.MultiWriter(file, os.Stderr))
 	return logPath, func() { _ = file.Close() }, nil
 }
-
