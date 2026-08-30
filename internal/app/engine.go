@@ -35,10 +35,14 @@ func ConfiguredEngine(cfg config.Config) (transcriber.Transcriber, error) {
 		if err := checkWhisperCLI(cfg.Local.Binary); err != nil {
 			return nil, err
 		}
+		if cfg.Local.Threads < 0 {
+			return nil, fmt.Errorf(`"local.threads" in the configuration file (or VTT_WHISPER_THREADS) must be zero for automatic or a positive thread count, not %d`, cfg.Local.Threads)
+		}
 		return &transcriber.LocalWhisper{
 			Binary:   cfg.Local.Binary,
 			Model:    cfg.Local.Model,
 			Language: cfg.Language,
+			Threads:  cfg.Local.Threads,
 		}, nil
 	default:
 		return nil, fmt.Errorf(`unknown engine %q: set "engine" in the configuration file (or VTT_ENGINE) to cloud or local`, cfg.Engine)

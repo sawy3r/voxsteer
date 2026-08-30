@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -62,6 +63,37 @@ func TestLocalWhisperBoundsProcessOutput(t *testing.T) {
 	text, err := engine.Transcribe(context.Background(), []float32{0.1})
 	if err == nil || !strings.Contains(err.Error(), "output exceeded") {
 		t.Fatalf("error = %v, output bytes = %d", err, len(text))
+	}
+}
+
+func TestLocalWhisperPassesThreadCount(t *testing.T) {
+	dir := t.TempDir()
+	binary := filepath.Join(dir, "fake-whisper")
+	script := "#!/bin/sh\nprintf '%s ' \"$@\"\n"
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	explicit := &LocalWhisper{Binary: binary, Model: filepath.Join(dir, "model.bin"), Threads: 6}
+	args, err := explicit.Transcribe(context.Background(), []float32{0.1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(args, "-t 6") {
+		t.Fatalf("args = %q, want -t 6", args)
+	}
+
+	automatic := &LocalWhisper{Binary: binary, Model: filepath.Join(dir, "model.bin")}
+	args, err = automatic.Transcribe(context.Background(), []float32{0.1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := automatic.threadCount()
+	if want < 1 || want > 8 {
+		t.Fatalf("threadCount() = %d, want between 1 and 8", want)
+	}
+	if !strings.Contains(args, "-t "+strconv.Itoa(want)) {
+		t.Fatalf("args = %q, want -t %d", args, want)
 	}
 }
 

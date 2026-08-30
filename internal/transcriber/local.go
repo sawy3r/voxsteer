@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +21,9 @@ type LocalWhisper struct {
 	Binary   string
 	Model    string
 	Language string
+	// Threads sets whisper.cpp's worker thread count; zero picks an
+	// automatic count based on the machine.
+	Threads int
 }
 
 const maxWhisperOutput = 1 << 20
@@ -74,7 +79,7 @@ func (l *LocalWhisper) Transcribe(ctx context.Context, samples []float32) (strin
 	// --no-prints keeps diagnostics off stdout while preserving the transcript
 	// result. Reading stdout directly avoids version-specific output-file
 	// behavior and an unnecessary temporary transcript file.
-	args := []string{"-m", l.Model, "-f", inputPath, "-np", "-nt"}
+	args := []string{"-m", l.Model, "-f", inputPath, "-np", "-nt", "-t", strconv.Itoa(l.threadCount())}
 	if language := whisperLanguage(l.Language); language != "" {
 		args = append(args, "-l", language)
 	}
@@ -101,6 +106,23 @@ func (l *LocalWhisper) Transcribe(ctx context.Context, samples []float32) (strin
 		return "", fmt.Errorf("whisper.cpp failed: %s", strings.TrimSpace(stderr.String()))
 	}
 	return text, nil
+}
+
+// threadCount defaults to more workers than whisper.cpp's own four, which
+// leaves most of a modern CPU idle, while capping at eight so efficiency
+// cores and hyperthreads are not oversubscribed.
+func (l *LocalWhisper) threadCount() int {
+	if l.Threads > 0 {
+		return l.Threads
+	}
+	threads := runtime.NumCPU()
+	if threads > 8 {
+		threads = 8
+	}
+	if threads < 1 {
+		threads = 1
+	}
+	return threads
 }
 
 func whisperLanguage(language string) string {

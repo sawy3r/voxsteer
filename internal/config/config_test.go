@@ -42,6 +42,38 @@ func TestLoadExplicitConfigAndEnvironmentOverride(t *testing.T) {
 	}
 }
 
+func TestLoadThreadsFromFileAndEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	body := []byte(`{"engine": "local", "local": {"model": "model.bin", "threads": 6}}`)
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VTT_CONFIG", path)
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Local.Threads != 6 {
+		t.Fatalf("threads = %d, want 6", cfg.Local.Threads)
+	}
+
+	t.Setenv("VTT_WHISPER_THREADS", "12")
+	cfg, _, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Local.Threads != 12 {
+		t.Fatalf("threads = %d, want 12", cfg.Local.Threads)
+	}
+
+	t.Setenv("VTT_WHISPER_THREADS", "many")
+	if _, _, err := Load(); err == nil {
+		t.Fatal("Load() error = nil, want thread parse error")
+	}
+}
+
 func TestSaveUserWritesPrivateConfig(t *testing.T) {
 	home := t.TempDir()
 	var configRoot string

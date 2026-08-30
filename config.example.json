@@ -4,7 +4,8 @@
   "shortcut": "ctrl+alt+space",
   "local": {
     "binary": "whisper/Release/whisper-cli.exe",
-    "model": "models/ggml-large-v3-turbo-q5_0.bin"
+    "model": "models/ggml-large-v3-turbo-q5_0.bin",
+    "threads": 0
   },
   "cloud": {
     "endpoint": "",

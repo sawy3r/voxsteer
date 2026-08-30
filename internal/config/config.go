@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 type Config struct {
@@ -13,8 +14,9 @@ type Config struct {
 	Language string `json:"language"`
 	Shortcut string `json:"shortcut"`
 	Local    struct {
-		Binary string `json:"binary"`
-		Model  string `json:"model"`
+		Binary  string `json:"binary"`
+		Model   string `json:"model"`
+		Threads int    `json:"threads"`
 	} `json:"local"`
 	Cloud struct {
 		Endpoint string `json:"endpoint"`
@@ -45,7 +47,9 @@ func Load() (Config, string, error) {
 		}
 	}
 
-	applyEnvironment(&cfg)
+	if err := applyEnvironment(&cfg); err != nil {
+		return cfg, path, err
+	}
 	if path != "" {
 		base := filepath.Dir(path)
 		cfg.Local.Binary = resolvePath(base, cfg.Local.Binary)
@@ -163,7 +167,7 @@ func decode(path string, cfg *Config) error {
 	return nil
 }
 
-func applyEnvironment(cfg *Config) {
+func applyEnvironment(cfg *Config) error {
 	override(&cfg.Engine, "VTT_ENGINE")
 	override(&cfg.Language, "VTT_LANGUAGE")
 	override(&cfg.Local.Binary, "VTT_WHISPER_BINARY")
@@ -172,6 +176,20 @@ func applyEnvironment(cfg *Config) {
 	override(&cfg.Cloud.APIKey, "VTT_CLOUD_API_KEY")
 	override(&cfg.Cloud.Model, "VTT_CLOUD_MODEL")
 	override(&cfg.Shortcut, "VTT_SHORTCUT")
+	return overrideInt(&cfg.Local.Threads, "VTT_WHISPER_THREADS")
+}
+
+func overrideInt(target *int, name string) error {
+	value, ok := os.LookupEnv(name)
+	if !ok {
+		return nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fmt.Errorf("%s must be a whole number of threads, not %q", name, value)
+	}
+	*target = parsed
+	return nil
 }
 
 func override(target *string, name string) {
