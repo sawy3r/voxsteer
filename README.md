@@ -26,8 +26,13 @@ captured shortcut / mouse button → microphone → cloud or whisper.cpp → nat
                               live recording HUD                    focused field
 ```
 
-Windows uses WASAPI and `SendInput` directly and builds without CGO. macOS and
-Linux use miniaudio and RobotGo behind the same interfaces.
+Windows uses WASAPI and `SendInput` directly and builds without CGO. macOS uses
+miniaudio and RobotGo behind the same interfaces. Linux uses miniaudio for
+capture, reads the kernel input devices (evdev) for the activation shortcut so
+it works on Wayland and X11 alike, and types through an external tool —
+`wtype` or `ydotool` on Wayland, `xdotool` on X11 — following the same
+philosophy as the whisper-cli adapter: compositor-specific machinery stays
+outside the Go module.
 
 Browser mode is a separate CGO-free executable. It never opens an audio device,
 monitors input, or injects keys:
@@ -205,6 +210,61 @@ the quantized Whisper model supplied by the script.
 type into an elevated Administrator window. Run both applications at the same
 integrity level.
 
+## Linux
+
+Both Wayland (COSMIC, GNOME, KDE, wlroots) and X11 sessions are supported. The
+Linux binary is nearly pure Go — the only C in the build is the bundled
+miniaudio, so `gcc` is the only build prerequisite. The tray icon is published
+over D-Bus StatusNotifierItem (built into COSMIC and KDE; GNOME needs the
+AppIndicator extension).
+
+```sh
+make build-linux        # requires only Go and gcc
+make install-linux      # installs to ~/.local/bin plus an autostart entry
+```
+
+### Typing tool
+
+Transcripts are typed by an external tool, chosen at runtime:
+
+| Session | Tool | Notes |
+| --- | --- | --- |
+| Wayland | `wtype` (recommended) | Virtual-keyboard protocol: COSMIC, KDE, wlroots |
+| Wayland | `ydotool` | Any compositor via uinput; needs `ydotoold` running |
+| X11 | `xdotool` | XTEST; also the XWayland fallback |
+
+```sh
+sudo apt install wtype      # Wayland
+sudo apt install xdotool    # X11
+```
+
+### Activation
+
+Wayland compositors do not allow global hotkey grabs, and X11 grabs never fire
+while a native Wayland window has focus, so VoxSteer offers two mechanisms
+that work identically on Wayland and X11:
+
+1. **Desktop keyboard shortcut (recommended).** VoxSteer listens on a control
+   socket, and `voxsteer toggle` starts or stops dictation in the running
+   instance. Bind it as a custom shortcut in the desktop settings (COSMIC:
+   Settings → Input Devices → Keyboard → Custom Shortcuts; GNOME: Settings →
+   Keyboard → Custom Shortcuts). No special permissions are needed.
+2. **Built-in listener.** With read access to `/dev/input`, VoxSteer matches
+   the configured shortcut — including `mouse3`–`mouse5` — directly on the
+   kernel input devices. Grant access once with
+   `sudo usermod -aG input $USER`, then log out and back in. Mouse-button
+   activation on Wayland requires this option.
+
+The tray menu's **Start / stop dictation** always works regardless.
+
+### Recording widget on Linux
+
+The recording widget is an X11 window, so it appears on X11 sessions directly
+and on Wayland desktops through XWayland. It shows the same live waveform and
+status as on Windows; pinning and dragging are not yet implemented. Without
+any X server (a Wayland session with XWayland disabled) VoxSteer runs without
+the widget and logs why.
+
 ## Configuration
 
 The installer creates the configuration automatically under the per-user
@@ -215,12 +275,10 @@ executable. Relative Whisper paths are resolved from that file. Existing
 
 ## Native prerequisites
 
-- Linux: GCC plus AppIndicator, GTK 3, and XTest development libraries required
-  by the tray, hotkey, and RobotGo packages. On Debian/Ubuntu:
-  `sudo apt install build-essential libayatana-appindicator3-dev libgtk-3-dev
-  libx11-dev libxtst-dev`. X11/XWayland is required for global injection; native
-  Wayland deliberately prevents arbitrary applications from typing into other
-  clients.
+- Linux: GCC for the bundled miniaudio (`sudo apt install build-essential`).
+  No X11 or GTK development headers are needed. At runtime, install a typing
+  tool (`wtype` on Wayland, `xdotool` on X11) and see the Linux section for
+  activation options.
 - macOS: Xcode command-line tools. Grant Accessibility, Input Monitoring, and
   microphone permissions for native desktop mode. Browser mode requires none
   of these permissions for the VoxSteer process.
@@ -237,7 +295,8 @@ does not remove those desktop requirements.
 ## Verification
 
 VoxSteer writes operational diagnostics to
-`%AppData%\VoxSteer\voxsteer.log` on Windows. The log records captured audio
+`%AppData%\VoxSteer\voxsteer.log` on Windows and
+`~/.config/VoxSteer/voxsteer.log` on Linux. The log records captured audio
 duration, transcription success, and actionable errors, but never transcript
 text. Use **Open diagnostic log** in the VoxSteer tray menu rather than
 navigating AppData manually. A transcription failure also appears briefly in
@@ -256,7 +315,7 @@ go test -tags desktop ./...
 
 ## Third-party assets
 
-The Windows recording widget bundles
+The recording widget (Windows and Linux) bundles
 [Inter](https://github.com/rsms/inter) Regular 4.1 by Rasmus Andersson and the
 Inter Project Authors under the SIL Open Font License 1.1. The font and its
 licence are kept together in `internal/hud/assets`.

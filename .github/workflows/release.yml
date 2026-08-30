@@ -208,26 +208,68 @@ jobs:
           path: release/*
           if-no-files-found: error
 
+  linux-amd64:
+    name: Linux amd64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve version
+        shell: bash
+        env:
+          VOXSTEER_REF_TYPE: ${{ github.ref_type }}
+          VOXSTEER_REF_NAME: ${{ github.ref_name }}
+          VOXSTEER_INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$VOXSTEER_REF_TYPE" == "tag" ]]; then
+            version="$VOXSTEER_REF_NAME"
+            version="${version#v}"
+          else
+            version="$VOXSTEER_INPUT_VERSION"
+          fi
+          printf 'VOXSTEER_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        run: make build-linux
+
+      - name: Stage release assets
+        run: |
+          mkdir -p release stage
+          cp bin/voxsteer config.example.json README.md stage/
+          cp scripts/install-linux.sh stage/
+          cp cmd/voxsteer/assets/voxsteer.png stage/
+          tar -C stage -czf "release/voxsteer-$VOXSTEER_VERSION-linux-amd64.tar.gz" .
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-amd64
+          path: release/*
+          if-no-files-found: error
+
   publish:
     name: Publish GitHub release
     if: github.ref_type == 'tag'
     needs:
       - windows-installers
       - macos-browser
+      - linux-amd64
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v8
         with:
-          pattern: windows-*
+          pattern: "*-*"
           path: release
           merge-multiple: true
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: macos-browser
-          path: release
 
       - name: Create checksums
         working-directory: release
@@ -243,4 +285,4 @@ jobs:
             --repo "$RELEASE_REPOSITORY" \
             --title "VoxSteer $RELEASE_TAG" \
             --generate-notes \
-            --notes "Windows releases include architecture-specific installers with guided setup, native activation, typing, and the recording HUD. The Universal 2 macOS browser app records through the user's existing browser permission, requires no native microphone or input-monitoring access, and provides explicit transcript copying for manual paste."
+            --notes "Windows releases include architecture-specific installers with guided setup, native activation, typing, and the recording HUD. The Universal 2 macOS browser app records through the user's existing browser permission, requires no native microphone or input-monitoring access, and provides explicit transcript copying for manual paste. The Linux tarball supports Wayland and X11; run its install-linux.sh and see the README for the typing tool and activation setup."

@@ -1,4 +1,4 @@
-.PHONY: test build-desktop build-browser build-macos-browser build-windows-amd64 build-windows-arm64 build-windows
+.PHONY: test build-desktop build-linux install-linux build-browser build-macos-browser build-windows-amd64 build-windows-arm64 build-windows
 
 test:
 	go test ./...
@@ -6,6 +6,14 @@ test:
 build-desktop:
 	mkdir -p bin
 	go build -buildvcs=false -tags desktop -trimpath -o bin/voxsteer ./cmd/voxsteer
+
+build-linux:
+	mkdir -p bin
+	go build -buildvcs=false -tags desktop -trimpath -ldflags="-s -w" \
+		-o bin/voxsteer ./cmd/voxsteer
+
+install-linux: build-linux
+	./scripts/install-linux.sh
 
 build-browser:
 	mkdir -p bin

@@ -1,4 +1,4 @@
-//go:build desktop && !windows && !cgo
+//go:build desktop && darwin && !cgo
 
 package mousebutton
 
