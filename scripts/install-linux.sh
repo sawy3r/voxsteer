@@ -57,5 +57,5 @@ echo "  2. Built-in shortcut listener: add yourself to the input group and"
 echo "     log out and back in: sudo usermod -aG input \$USER"
 echo
 echo "Typing tool:"
-echo "  Wayland: sudo apt install wtype     (or ydotool)"
+echo "  Wayland: built in for COSMIC, KDE and wlroots; GNOME needs ydotool"
 echo "  X11:     sudo apt install xdotool"
