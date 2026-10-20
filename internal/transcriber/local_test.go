@@ -82,6 +82,9 @@ func TestLocalWhisperPassesThreadCount(t *testing.T) {
 	if !strings.Contains(args, "-t 6") {
 		t.Fatalf("args = %q, want -t 6", args)
 	}
+	if !strings.Contains(args, "-mc 0") {
+		t.Fatalf("args = %q, want -mc 0 so long dictations cannot loop on earlier text", args)
+	}
 
 	automatic := &LocalWhisper{Binary: binary, Model: filepath.Join(dir, "model.bin")}
 	args, err = automatic.Transcribe(context.Background(), []float32{0.1})
