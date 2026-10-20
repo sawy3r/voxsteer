@@ -29,10 +29,7 @@ captured shortcut / mouse button → microphone → cloud or whisper.cpp → nat
 Windows uses WASAPI and `SendInput` directly and builds without CGO. macOS uses
 miniaudio and RobotGo behind the same interfaces. Linux uses miniaudio for
 capture, reads the kernel input devices (evdev) for the activation shortcut so
-it works on Wayland and X11 alike, and types through an external tool —
-`wtype` or `ydotool` on Wayland, `xdotool` on X11 — following the same
-philosophy as the whisper-cli adapter: compositor-specific machinery stays
-outside the Go module.
+it works on Wayland and X11 alike. On Wayland it types through the compositor's virtual-keyboard protocol, spoken directly over the Wayland socket; compositors without that protocol fall back to `ydotool`, and X11 uses `xdotool`.
 
 Browser mode is a separate CGO-free executable. It never opens an audio device,
 monitors input, or injects keys:
@@ -223,20 +220,21 @@ make build-linux        # requires only Go and gcc
 make install-linux      # installs to ~/.local/bin plus an autostart entry
 ```
 
-### Typing tool
+### Typing
 
-Transcripts are typed by an external tool, chosen at runtime:
+Transcripts are typed by the first method that works, chosen at runtime:
 
-| Session | Tool | Notes |
+| Session | Method | Notes |
 | --- | --- | --- |
-| Wayland | `wtype` (recommended) | Virtual-keyboard protocol: COSMIC, KDE, wlroots |
-| Wayland | `ydotool` | Any compositor via uinput; needs `ydotoold` running |
-| X11 | `xdotool` | XTEST; also the XWayland fallback |
+| Wayland | Built in | Virtual-keyboard protocol: COSMIC, KDE, wlroots; nothing to install |
+| Wayland | `ydotool` | Fallback for compositors without the protocol, such as GNOME; needs `ydotoold` running |
+| X11 | `xdotool` | XTEST; also the last-resort XWayland fallback |
 
 ```sh
-sudo apt install wtype      # Wayland
 sudo apt install xdotool    # X11
 ```
+
+VoxSteer no longer uses `wtype`, which assigns each distinct character the next keycode from 1 upwards, so whichever character comes 14th lands on the physical Backspace position; Chrome, Electron apps and some terminals then delete the previous character instead of typing it (wtype issue #71). The built-in keyboard only puts characters on printable key positions.
 
 ### Activation
 
@@ -276,9 +274,7 @@ executable. Relative Whisper paths are resolved from that file. Existing
 ## Native prerequisites
 
 - Linux: GCC for the bundled miniaudio (`sudo apt install build-essential`).
-  No X11 or GTK development headers are needed. At runtime, install a typing
-  tool (`wtype` on Wayland, `xdotool` on X11) and see the Linux section for
-  activation options.
+  No X11 or GTK development headers are needed. At runtime, X11 sessions and Wayland compositors without the virtual-keyboard protocol need a typing tool (`xdotool` on X11, `ydotool` on Wayland); see the Linux section for typing and activation options.
 - macOS: Xcode command-line tools. Grant Accessibility, Input Monitoring, and
   microphone permissions for native desktop mode. Browser mode requires none
   of these permissions for the VoxSteer process.

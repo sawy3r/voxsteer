@@ -4,21 +4,25 @@ package desktop
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/sawy3r/voxsteer/internal/wayland"
 )
 
-// Injector types text with an external tool, mirroring how the local engine
-// shells out to whisper-cli: the compositor-specific machinery stays outside
-// the Go module.
+// Injector types text into the focused window.
 //
-//   - Wayland: wtype speaks the virtual-keyboard protocol (COSMIC, wlroots,
-//     KDE). ydotool works on any compositor through uinput but needs its
-//     daemon. As a last resort xdotool reaches XWayland clients only.
+//   - Wayland: VoxSteer speaks the virtual-keyboard protocol itself (COSMIC,
+//     wlroots, KDE). wtype is not used: it can put punctuation on the
+//     physical Backspace key, which Chrome and terminals then act on.
+//     Compositors without the protocol, such as GNOME, fall back to ydotool,
+//     which works through uinput but needs its daemon, and as a last resort
+//     to xdotool, which reaches XWayland clients only.
 //   - X11: xdotool uses XTEST and handles layouts and unicode.
 type Injector struct{}
 
@@ -32,15 +36,13 @@ func (Injector) Type(text string) error {
 	time.Sleep(120 * time.Millisecond)
 
 	if waylandSession() {
-		if path, err := exec.LookPath("wtype"); err == nil {
-			if err := runTyper(path, text, true); err == nil {
-				return nil
-			} else {
-				log.Printf("wtype failed, trying the next injector: %v", err)
-			}
+		err := wayland.Type(text)
+		if !errors.Is(err, wayland.ErrUnavailable) {
+			return err
 		}
+		log.Printf("trying an external typing tool: %v", err)
 		if path, err := exec.LookPath("ydotool"); err == nil {
-			if err := runTyper(path, text, false, "type", "--file"); err == nil {
+			if err := runTyper(path, text, "type", "--file"); err == nil {
 				return nil
 			} else {
 				log.Printf("ydotool failed, trying the next injector: %v", err)
@@ -49,14 +51,14 @@ func (Injector) Type(text string) error {
 		if os.Getenv("DISPLAY") != "" {
 			if path, err := exec.LookPath("xdotool"); err == nil {
 				log.Print("falling back to xdotool: text reaches XWayland applications only")
-				return runTyper(path, text, false, "type", "--clearmodifiers", "--file")
+				return runTyper(path, text, "type", "--clearmodifiers", "--file")
 			}
 		}
-		return fmt.Errorf("no Wayland typing tool found: install wtype (recommended) or ydotool")
+		return fmt.Errorf("the compositor has no virtual-keyboard protocol and no typing tool was found: install ydotool")
 	}
 
 	if path, err := exec.LookPath("xdotool"); err == nil {
-		return runTyper(path, text, false, "type", "--clearmodifiers", "--file")
+		return runTyper(path, text, "type", "--clearmodifiers", "--file")
 	}
 	return fmt.Errorf("no X11 typing tool found: install xdotool")
 }
@@ -65,29 +67,23 @@ func waylandSession() bool {
 	return os.Getenv("WAYLAND_DISPLAY") != ""
 }
 
-// runTyper feeds the text through stdin (wtype -) or a private temporary
-// file so the transcript never appears in the process argument list.
-func runTyper(binary, text string, viaStdin bool, args ...string) error {
+// runTyper feeds the text through a private temporary file so the
+// transcript never appears in the process argument list.
+func runTyper(binary, text string, args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), typeTimeout)
 	defer cancel()
 
-	var cmd *exec.Cmd
-	if viaStdin {
-		cmd = exec.CommandContext(ctx, binary, "-")
-		cmd.Stdin = strings.NewReader(text)
-	} else {
-		file, err := os.CreateTemp("", "voxsteer-*.txt")
-		if err != nil {
-			return fmt.Errorf("stage transcript: %w", err)
-		}
-		defer os.Remove(file.Name())
-		if _, err := file.WriteString(text); err != nil {
-			file.Close()
-			return fmt.Errorf("stage transcript: %w", err)
-		}
-		file.Close()
-		cmd = exec.CommandContext(ctx, binary, append(args, file.Name())...)
+	file, err := os.CreateTemp("", "voxsteer-*.txt")
+	if err != nil {
+		return fmt.Errorf("stage transcript: %w", err)
 	}
+	defer os.Remove(file.Name())
+	if _, err := file.WriteString(text); err != nil {
+		file.Close()
+		return fmt.Errorf("stage transcript: %w", err)
+	}
+	file.Close()
+	cmd := exec.CommandContext(ctx, binary, append(args, file.Name())...)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -105,18 +101,19 @@ func runTyper(binary, text string, viaStdin bool, args ...string) error {
 // tools would have been acceptable.
 func InjectionRequirements() string {
 	if waylandSession() {
-		if path, err := exec.LookPath("wtype"); err == nil {
-			return "Wayland session: typing uses wtype (" + path + ")"
+		err := wayland.Available()
+		if err == nil {
+			return "Wayland session: typing uses the compositor's virtual-keyboard protocol"
 		}
 		if path, err := exec.LookPath("ydotool"); err == nil {
-			return "Wayland session: typing uses ydotool (" + path + "); its ydotoold daemon must be running"
+			return "Wayland session: typing uses ydotool (" + path + ") because " + err.Error() + "; its ydotoold daemon must be running"
 		}
 		if os.Getenv("DISPLAY") != "" {
 			if path, err := exec.LookPath("xdotool"); err == nil {
-				return "Wayland session: only xdotool (" + path + ") is available, so text reaches XWayland applications only; install wtype for native Wayland windows"
+				return "Wayland session: only xdotool (" + path + ") is available because " + err.Error() + ", so text reaches XWayland applications only; install ydotool for native Wayland windows"
 			}
 		}
-		return "WARNING: no typing tool found, so transcriptions cannot be typed; install wtype (recommended) or ydotool"
+		return "WARNING: " + err.Error() + " and no typing tool was found, so transcriptions cannot be typed; install ydotool"
 	}
 	if path, err := exec.LookPath("xdotool"); err == nil {
 		return "X11 session: typing uses xdotool (" + path + ")"
