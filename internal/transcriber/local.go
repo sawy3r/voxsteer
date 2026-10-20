@@ -78,8 +78,10 @@ func (l *LocalWhisper) Transcribe(ctx context.Context, samples []float32) (strin
 	}
 	// --no-prints keeps diagnostics off stdout while preserving the transcript
 	// result. Reading stdout directly avoids version-specific output-file
-	// behavior and an unnecessary temporary transcript file.
-	args := []string{"-m", l.Model, "-f", inputPath, "-np", "-nt", "-t", strconv.Itoa(l.threadCount())}
+	// behavior and an unnecessary temporary transcript file. --max-context 0
+	// stops each 30-second window being conditioned on the text before it,
+	// which is what lets long dictations fall into a loop repeating a phrase.
+	args := []string{"-m", l.Model, "-f", inputPath, "-np", "-nt", "-mc", "0", "-t", strconv.Itoa(l.threadCount())}
 	if language := whisperLanguage(l.Language); language != "" {
 		args = append(args, "-l", language)
 	}
