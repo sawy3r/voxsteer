@@ -27,7 +27,7 @@ captured shortcut / mouse button → microphone → cloud or whisper.cpp → nat
 ```
 
 Windows uses WASAPI and `SendInput` directly and builds without CGO. macOS uses
-miniaudio and RobotGo behind the same interfaces. Linux uses miniaudio for
+miniaudio for capture and types with Core Graphics keyboard events, up to 20 characters at a time. Linux uses miniaudio for
 capture, reads the kernel input devices (evdev) for the activation shortcut so
 it works on Wayland and X11 alike. On Wayland it types through the compositor's virtual-keyboard protocol, spoken directly over the Wayland socket; compositors without that protocol fall back to `ydotool`, and X11 uses `xdotool`.
 
