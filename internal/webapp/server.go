@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	appaudio "github.com/sawy3r/voxsteer/internal/audio"
+	"github.com/sawy3r/voxsteer/internal/settings"
 	"github.com/sawy3r/voxsteer/internal/transcriber"
 )
 
@@ -42,16 +43,9 @@ type EngineStatus struct {
 
 type EngineProvider func() (transcriber.Transcriber, EngineStatus, error)
 
-type Settings struct {
-	Engine         string  `json:"engine"`
-	Language       string  `json:"language"`
-	CloudEndpoint  string  `json:"cloud_endpoint"`
-	CloudModel     string  `json:"cloud_model"`
-	HasCloudAPIKey bool    `json:"has_cloud_api_key"`
-	CloudAPIKey    *string `json:"cloud_api_key,omitempty"`
-	LocalBinary    string  `json:"local_binary"`
-	LocalModel     string  `json:"local_model"`
-}
+// Settings is the shared settings form, so the browser and native interfaces
+// agree on field names and validation.
+type Settings = settings.Values
 
 type Options struct {
 	Host                 string

@@ -46,24 +46,7 @@ cp "$PROJECT_ROOT/packaging/macos-browser/Info.plist" "$APP/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$APP/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$BUILD_NUMBER" "$APP/Contents/Info.plist"
 
-ICONSET="$BUILD_DIR/VoxSteer.iconset"
-mkdir -p "$ICONSET"
-ICON_SOURCE="$PROJECT_ROOT/cmd/voxsteer/assets/voxsteer.png"
-for spec in \
-  "16 icon_16x16.png" \
-  "32 icon_16x16@2x.png" \
-  "32 icon_32x32.png" \
-  "64 icon_32x32@2x.png" \
-  "128 icon_128x128.png" \
-  "256 icon_128x128@2x.png" \
-  "256 icon_256x256.png" \
-  "512 icon_256x256@2x.png" \
-  "512 icon_512x512.png" \
-  "1024 icon_512x512@2x.png"; do
-  read -r size name <<< "$spec"
-  sips -z "$size" "$size" "$ICON_SOURCE" --out "$ICONSET/$name" >/dev/null
-done
-iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/VoxSteer.icns"
+bash "$PROJECT_ROOT/scripts/make-macos-icon.sh" "$BUILD_DIR" "$APP/Contents/Resources/VoxSteer.icns"
 
 plutil -lint "$APP/Contents/Info.plist"
 if [[ "$(plutil -extract LSMinimumSystemVersion raw "$APP/Contents/Info.plist")" != "13.0" ]]; then

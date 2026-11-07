@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>VoxSteer Settings</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --window: #ececec;
+  --text: #1d1d1f;
+  --text-soft: #6e6e73;
+  --group: rgba(255, 255, 255, 0.7);
+  --line: rgba(0, 0, 0, 0.09);
+  --field: #ffffff;
+  --field-line: rgba(0, 0, 0, 0.18);
+  --accent: #007aff;
+  --error: #b3261e;
+
+  /* The deck is VoxSteer's own colour and stays the same in both appearances. */
+  --deck: #06132b;
+  --deck-ink: #f5f9ff;
+  --deck-soft: #8fa5c3;
+  --cap-top: #1b477d;
+  --cap-face: #0c2347;
+  --cap-edge: #030b1c;
+  --cap-legend: #c7d6eb;
+  --lit: #35e8f4;
+
+  font: 13px/1.35 -apple-system, system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --window: #29292b;
+    --text: #f5f5f7;
+    --text-soft: #a1a1a6;
+    --group: rgba(255, 255, 255, 0.055);
+    --line: rgba(255, 255, 255, 0.09);
+    --field: rgba(255, 255, 255, 0.08);
+    --field-line: rgba(255, 255, 255, 0.16);
+    --accent: #0a84ff;
+    --error: #ff8a80;
+  }
+}
+
+@supports (color: -apple-system-control-accent) {
+  :root { --accent: -apple-system-control-accent; }
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--window);
+  color: var(--text);
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* The deck: the one loud element in the window. */
+
+.deck {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 18px;
+  height: 132px;
+  padding: 28px 22px 4px;
+  background: var(--deck);
+  color: var(--deck-ink);
+}
+
+.caps {
+  display: flex;
+  flex: none;
+  gap: 7px;
+}
+
+.cap {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 58px;
+  height: 58px;
+  padding: 7px 8px 6px;
+  border-radius: 9px;
+  background: linear-gradient(180deg, var(--cap-top), var(--cap-face) 62%);
+  box-shadow: 0 4px 0 var(--cap-edge), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  color: var(--cap-legend);
+}
+
+.cap.wide { width: 92px; }
+
+.cap.waiting {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--cap-top);
+}
+
+.cap .glyph {
+  align-self: flex-end;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.cap.letter .glyph {
+  align-self: center;
+  margin: auto 0;
+  font-size: 21px;
+  font-weight: 500;
+}
+
+.cap .name {
+  font-size: 10.5px;
+  line-height: 1;
+}
+
+.cap.press {
+  animation: press 240ms ease-out;
+}
+
+.cap.press-twice {
+  animation: press 240ms ease-out, press 240ms ease-out 300ms;
+}
+
+@keyframes press {
+  40% {
+    color: var(--lit);
+    box-shadow: 0 1px 0 var(--cap-edge), inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 0 14px rgba(53, 232, 244, 0.45);
+    transform: translateY(3px);
+  }
+}
+
+.deck-copy { min-width: 0; }
+
+.deck-title {
+  margin: 0 0 3px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.deck-hint {
+  margin: 0;
+  color: var(--deck-soft);
+  font-size: 12px;
+}
+
+/* The form below it follows macOS. */
+
+main {
+  flex: 1;
+  min-height: 0;
+  padding: 14px 20px 4px;
+  overflow-y: auto;
+}
+
+fieldset {
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+}
+
+legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-weight: 600;
+}
+
+.group {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--group);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 4px 10px;
+}
+
+.row + .row { border-top: 1px solid var(--line); }
+
+.row > span { flex: 1; }
+
+.row[hidden] { display: none; }
+
+.row input[type="radio"] { margin: 0; }
+
+.field {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 5px 10px;
+}
+
+.field[hidden] { display: none; }
+
+.field:not([hidden]) ~ .field:not([hidden]) { border-top: 1px solid var(--line); }
+
+input[type="text"],
+input[type="url"],
+input[type="password"] {
+  width: 100%;
+  height: 24px;
+  padding: 2px 7px;
+  border: 1px solid var(--field-line);
+  border-radius: 5px;
+  background: var(--field);
+  color: inherit;
+  font: inherit;
+  cursor: text;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+input::placeholder { color: var(--text-soft); }
+
+input:focus {
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  outline-offset: 0;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  margin-bottom: 8px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--line);
+}
+
+.segmented input {
+  position: absolute;
+  opacity: 0;
+}
+
+.segmented span {
+  display: block;
+  padding: 3px 0;
+  border-radius: 5px;
+  text-align: center;
+}
+
+.segmented input:checked + span {
+  background: var(--field);
+  box-shadow: 0 0 0 0.5px var(--field-line);
+  font-weight: 500;
+}
+
+.segmented input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.note {
+  margin: 6px 2px 0;
+  color: var(--text-soft);
+  font-size: 11.5px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.note code { font: 11px ui-monospace, monospace; }
+
+.saved-key {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.link {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+}
+
+.link[hidden] { display: none; }
+
+footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px 14px;
+}
+
+.error {
+  flex: 1;
+  margin: 0;
+  color: var(--error);
+  font-size: 12px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.primary {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 64px;
+  height: 20px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--accent);
+  color: #ffffff;
+  font: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cap.press, .cap.press-twice { animation: none; }
+}
+</style>
+</head>
+<body>
+<form id="form" novalidate>
+  <section class="deck" aria-live="polite">
+    <div class="caps" id="caps"></div>
+    <div class="deck-copy">
+      <p class="deck-title" id="deckTitle"></p>
+      <p class="deck-hint" id="deckHint"></p>
+    </div>
+  </section>
+
+  <main>
+    <fieldset>
+      <legend>Start dictation</legend>
+      <div class="group">
+        <label class="row">
+          <input type="radio" name="activation" value="double">
+          <span>Double-tap left Ctrl</span>
+        </label>
+        <label class="row">
+          <input type="radio" name="activation" value="combo">
+          <span>Key combination</span>
+          <button type="button" id="captureButton">Change…</button>
+        </label>
+        <label class="row">
+          <input type="radio" name="activation" value="mouse">
+          <span>Mouse button</span>
+          <select id="mouseButton" aria-label="Mouse button">
+            <option value="3">Middle</option>
+            <option value="4">Button 4</option>
+            <option value="5">Button 5</option>
+          </select>
+        </label>
+        <label class="row">
+          <input type="radio" name="activation" value="menu">
+          <span>Menu bar only</span>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Transcription</legend>
+      <div class="segmented" role="radiogroup" aria-label="Where speech is transcribed">
+        <label><input type="radio" name="engine" value="local"><span>On this Mac</span></label>
+        <label><input type="radio" name="engine" value="cloud"><span>Cloud service</span></label>
+      </div>
+      <div class="group">
+        <label class="field" data-engine="local">
+          <span>whisper-cli</span>
+          <input type="text" id="localBinary" placeholder="/opt/homebrew/bin/whisper-cli" spellcheck="false" autocomplete="off">
+        </label>
+        <label class="field" data-engine="local">
+          <span>Model file</span>
+          <input type="text" id="localModel" placeholder="/path/to/ggml-base.en.bin" spellcheck="false" autocomplete="off">
+        </label>
+        <label class="field" data-engine="cloud">
+          <span>Endpoint</span>
+          <input type="url" id="cloudEndpoint" placeholder="https://provider.example/v1/audio/transcriptions" spellcheck="false" autocomplete="off">
+        </label>
+        <label class="field" data-engine="cloud">
+          <span>Model</span>
+          <input type="text" id="cloudModel" placeholder="whisper-1" spellcheck="false" autocomplete="off">
+        </label>
+        <div class="field" data-engine="cloud">
+          <label for="cloudApiKey">API key</label>
+          <div class="saved-key">
+            <input type="password" id="cloudApiKey" autocomplete="off">
+            <button type="button" class="link" id="removeKey" hidden>Remove</button>
+          </div>
+        </div>
+        <label class="field">
+          <span>Language</span>
+          <input type="text" id="language" placeholder="en, or auto to detect" spellcheck="false" autocomplete="off">
+        </label>
+      </div>
+      <p class="note" data-engine="local">Install with <code>brew install whisper.cpp</code>, then download a ggml model from huggingface.co/ggerganov/whisper.cpp.</p>
+    </fieldset>
+  </main>
+
+  <footer>
+    <p class="error" id="error" role="alert"></p>
+    <button type="button" id="cancel">Cancel</button>
+    <button type="submit" class="primary" id="save">Save</button>
+  </footer>
+</form>
+
+<script>
+"use strict";
+
+const LEGENDS = {
+  ctrl: { glyph: "⌃", name: "control" },
+  alt: { glyph: "⌥", name: "option" },
+  shift: { glyph: "⇧", name: "shift" },
+  cmd: { glyph: "⌘", name: "command" },
+  space: { glyph: "", name: "space", wide: true },
+  mouse3: { glyph: "◉", name: "middle" },
+  mouse4: { glyph: "4", name: "mouse" },
+  mouse5: { glyph: "5", name: "mouse" },
+};
+
+const MODIFIER_ORDER = ["ctrl", "alt", "shift", "cmd"];
+const DEFAULT_COMBO = "ctrl+alt+space";
+const element = (id) => document.getElementById(id);
+
+const state = {
+  combo: DEFAULT_COMBO,
+  capturing: false,
+  hasSavedKey: false,
+  removeSavedKey: false,
+};
+
+function send(message) {
+  return window.webkit.messageHandlers.voxsteer
+    .postMessage(JSON.stringify(message))
+    .then((reply) => JSON.parse(reply));
+}
+
+function selected(name) {
+  return document.querySelector(`input[name="${name}"]:checked`)?.value ?? "";
+}
+
+function select(name, value) {
+  const input = document.querySelector(`input[name="${name}"][value="${value}"]`);
+  if (input) {
+    input.checked = true;
+  }
+}
+
+function makeCap(key) {
+  const legend = LEGENDS[key] ?? { glyph: key.toUpperCase(), name: "", letter: true };
+  const cap = document.createElement("div");
+  cap.className = "cap";
+  cap.classList.toggle("wide", Boolean(legend.wide) || key.length > 1 && !LEGENDS[key]);
+  cap.classList.toggle("letter", Boolean(legend.letter));
+  const glyph = document.createElement("span");
+  glyph.className = "glyph";
+  glyph.textContent = legend.glyph;
+  const name = document.createElement("span");
+  name.className = "name";
+  name.textContent = legend.name;
+  cap.append(glyph, name);
+  return cap;
+}
+
+function showCaps(keys) {
+  element("caps").replaceChildren(...keys.map(makeCap));
+}
+
+function showDeck(title, hint) {
+  element("deckTitle").textContent = title;
+  element("deckHint").textContent = hint;
+}
+
+function renderActivation() {
+  switch (selected("activation")) {
+    case "double":
+      showCaps(["ctrl"]);
+      showDeck("Double-tap left Ctrl", "Tap it twice to start, and twice again to stop.");
+      break;
+    case "combo":
+      showCaps(state.combo.split("+"));
+      showDeck("Key combination", "Press it once to start, and again to stop.");
+      break;
+    case "mouse": {
+      const button = element("mouseButton").value;
+      showCaps([`mouse${button}`]);
+      showDeck(button === "3" ? "Middle mouse button" : `Mouse button ${button}`, "Click it once to start, and again to stop.");
+      break;
+    }
+    default:
+      showCaps([]);
+      showDeck("Menu bar only", "Start and stop from the VoxSteer menu.");
+  }
+}
+
+function animateActivation() {
+  const caps = [...document.querySelectorAll(".cap")];
+  const name = selected("activation") === "double" ? "press-twice" : "press";
+  for (const cap of caps) {
+    cap.classList.remove("press", "press-twice");
+    void cap.offsetWidth;
+    cap.classList.add(name);
+  }
+}
+
+function keyFromCode(code) {
+  if (code.startsWith("Key")) {
+    return code.slice(3).toLowerCase();
+  }
+  if (code.startsWith("Digit")) {
+    return code.slice(5);
+  }
+  if (code === "Space") {
+    return "space";
+  }
+  return /^F([1-9]|1[0-2])$/.test(code) ? code.toLowerCase() : null;
+}
+
+function heldModifiers(event) {
+  const held = { ctrl: event.ctrlKey, alt: event.altKey, shift: event.shiftKey, cmd: event.metaKey };
+  return MODIFIER_ORDER.filter((key) => held[key]);
+}
+
+function showCapture(modifiers) {
+  element("caps").replaceChildren(...modifiers.map(makeCap));
+  const waiting = document.createElement("div");
+  waiting.className = "cap waiting";
+  element("caps").append(waiting);
+}
+
+function startCapture() {
+  select("activation", "combo");
+  state.capturing = true;
+  showCapture([]);
+  showDeck("Press your keys", "Hold Control, Option, Shift or Command, then press a key. Esc cancels.");
+  element("captureButton").textContent = "Press keys…";
+  element("captureButton").blur();
+}
+
+function stopCapture() {
+  state.capturing = false;
+  element("captureButton").textContent = "Change…";
+  renderActivation();
+}
+
+function onCaptureKey(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  if (event.type === "keyup") {
+    showCapture(heldModifiers(event));
+    return;
+  }
+  if (event.code === "Escape") {
+    stopCapture();
+    return;
+  }
+  const key = keyFromCode(event.code);
+  const modifiers = heldModifiers(event);
+  if (key === null) {
+    showCapture(modifiers);
+    return;
+  }
+  if (modifiers.length === 0 && !key.startsWith("f")) {
+    showDeck("Add a modifier", "Hold Control, Option, Shift or Command with that key, or use a function key.");
+    return;
+  }
+  state.combo = [...modifiers, key].join("+");
+  stopCapture();
+  animateActivation();
+}
+
+function shortcutValue() {
+  switch (selected("activation")) {
+    case "double":
+      return "double-left-ctrl";
+    case "combo":
+      return state.combo;
+    case "mouse":
+      return `mouse${element("mouseButton").value}`;
+    default:
+      return "disabled";
+  }
+}
+
+function showShortcut(value) {
+  if (value === "double-left-ctrl") {
+    select("activation", "double");
+  } else if (value === "disabled") {
+    select("activation", "menu");
+  } else if (value.startsWith("mouse")) {
+    select("activation", "mouse");
+    element("mouseButton").value = value.slice("mouse".length);
+  } else {
+    select("activation", "combo");
+    state.combo = value || DEFAULT_COMBO;
+  }
+}
+
+function renderEngine() {
+  const engine = selected("engine");
+  for (const item of document.querySelectorAll("[data-engine]")) {
+    item.hidden = item.dataset.engine !== engine;
+  }
+}
+
+function renderSavedKey() {
+  const saved = state.hasSavedKey && !state.removeSavedKey;
+  element("cloudApiKey").placeholder = saved ? "Saved" : "";
+  element("removeKey").hidden = !saved;
+}
+
+function showError(message) {
+  element("error").textContent = message ? message[0].toUpperCase() + message.slice(1) : "";
+}
+
+async function load() {
+  const reply = await send({ action: "load" });
+  if (!reply.ok) {
+    showError(reply.error);
+    return;
+  }
+  const settings = reply.settings;
+  showShortcut(settings.shortcut ?? "");
+  select("engine", settings.engine === "cloud" ? "cloud" : "local");
+  element("localBinary").value = settings.local_binary ?? "";
+  element("localModel").value = settings.local_model ?? "";
+  element("cloudEndpoint").value = settings.cloud_endpoint ?? "";
+  element("cloudModel").value = settings.cloud_model ?? "";
+  element("language").value = settings.language ?? "";
+  state.hasSavedKey = Boolean(settings.has_cloud_api_key);
+  renderSavedKey();
+  renderEngine();
+  renderActivation();
+}
+
+async function save(event) {
+  event.preventDefault();
+  showError("");
+  const settings = {
+    engine: selected("engine"),
+    language: element("language").value,
+    local_binary: element("localBinary").value,
+    local_model: element("localModel").value,
+    cloud_endpoint: element("cloudEndpoint").value,
+    cloud_model: element("cloudModel").value,
+    shortcut: shortcutValue(),
+  };
+  const key = element("cloudApiKey").value;
+  if (key !== "") {
+    settings.cloud_api_key = key;
+  } else if (state.removeSavedKey) {
+    settings.cloud_api_key = "";
+  }
+  const reply = await send({ action: "save", settings });
+  if (!reply.ok) {
+    showError(reply.error);
+    return;
+  }
+  send({ action: "close" });
+}
+
+window.addEventListener("keydown", (event) => {
+  if (state.capturing) {
+    onCaptureKey(event);
+  } else if (event.key === "Escape") {
+    send({ action: "close" });
+  }
+}, true);
+
+window.addEventListener("keyup", (event) => {
+  if (state.capturing) {
+    onCaptureKey(event);
+  }
+}, true);
+
+for (const input of document.querySelectorAll('input[name="activation"]')) {
+  input.addEventListener("change", () => {
+    if (state.capturing) {
+      stopCapture();
+    }
+    renderActivation();
+    animateActivation();
+  });
+}
+
+for (const input of document.querySelectorAll('input[name="engine"]')) {
+  input.addEventListener("change", renderEngine);
+}
+
+element("mouseButton").addEventListener("change", () => {
+  select("activation", "mouse");
+  renderActivation();
+  animateActivation();
+});
+
+element("captureButton").addEventListener("click", (event) => {
+  event.preventDefault();
+  startCapture();
+});
+
+element("removeKey").addEventListener("click", () => {
+  state.removeSavedKey = true;
+  renderSavedKey();
+});
+
+element("cancel").addEventListener("click", () => send({ action: "close" }));
+element("form").addEventListener("submit", save);
+
+load().catch((error) => showError(String(error)));
+</script>
+</body>
+</html>

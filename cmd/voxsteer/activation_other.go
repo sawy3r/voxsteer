@@ -5,28 +5,61 @@ package main
 import (
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/sawy3r/voxsteer/internal/app"
+	"github.com/sawy3r/voxsteer/internal/desktop"
+	"github.com/sawy3r/voxsteer/internal/doubletap"
 	"github.com/sawy3r/voxsteer/internal/mousebutton"
 	"github.com/sawy3r/voxsteer/internal/shortcut"
 	"golang.design/x/hotkey"
 )
 
+// configureActivation registers the shortcut, waiting first if the operating
+// system has not yet allowed global input. macOS refuses the hotkey until
+// Accessibility is granted, and the user may do that long after launch.
 func configureActivation(spec shortcut.Spec, controller *app.Controller) func() {
+	if spec.Disabled() || desktop.InputAccessGranted() {
+		return registerActivation(spec, controller)
+	}
+	log.Printf("%s will activate once Accessibility access is granted", spec.Display)
+
+	var mu sync.Mutex
+	unregister := func() {}
+	cancelled := make(chan struct{})
+	go func() {
+		if !desktop.WaitForInputAccess(cancelled) {
+			return
+		}
+		registered := registerActivation(spec, controller)
+		mu.Lock()
+		defer mu.Unlock()
+		select {
+		case <-cancelled:
+			registered()
+		default:
+			unregister = registered
+			log.Printf("%s is active", spec.Display)
+		}
+	}()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() { close(cancelled) })
+		mu.Lock()
+		defer mu.Unlock()
+		unregister()
+	}
+}
+
+func registerActivation(spec shortcut.Spec, controller *app.Controller) func() {
+	if spec.DoubleTapLeftCtrl {
+		events, stop, err := doubletap.Listen()
+		return forwardActivation(spec, controller, events, stop, err)
+	}
 	if spec.MouseButton != 0 {
 		events, stop, err := mousebutton.Listen(spec.MouseButton)
-		if err != nil {
-			log.Printf("register %s: %v; the tray menu remains available", spec.Display, err)
-			return func() {}
-		}
-		go func() {
-			for range events {
-				if err := controller.Toggle(); err != nil {
-					log.Print(err)
-				}
-			}
-		}()
-		return stop
+		return forwardActivation(spec, controller, events, stop, err)
 	}
 
 	hk, err := configuredHotkey(spec)
@@ -51,6 +84,28 @@ func configureActivation(spec shortcut.Spec, controller *app.Controller) func() 
 	return func() {
 		_ = hk.Unregister()
 	}
+}
+
+// forwardActivation toggles dictation for each event from a listener.
+func forwardActivation(
+	spec shortcut.Spec,
+	controller *app.Controller,
+	events <-chan struct{},
+	stop func(),
+	listenErr error,
+) func() {
+	if listenErr != nil {
+		log.Printf("register %s: %v; the tray menu remains available", spec.Display, listenErr)
+		return func() {}
+	}
+	go func() {
+		for range events {
+			if err := controller.Toggle(); err != nil {
+				log.Print(err)
+			}
+		}
+	}()
+	return stop
 }
 
 func configuredHotkey(spec shortcut.Spec) (*hotkey.Hotkey, error) {

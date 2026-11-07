@@ -10,20 +10,18 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
-	"unicode"
 
 	"github.com/sawy3r/voxsteer/internal/app"
 	"github.com/sawy3r/voxsteer/internal/config"
+	"github.com/sawy3r/voxsteer/internal/settings"
 	"github.com/sawy3r/voxsteer/internal/transcriber"
 	"github.com/sawy3r/voxsteer/internal/webapp"
 )
@@ -41,8 +39,6 @@ const maxRecordingSeconds = 10 * 60
 const transcriptionTimeout = 15 * time.Minute
 
 var version = "dev"
-
-var settingsMu sync.Mutex
 
 func main() {
 	os.Exit(realMain())
@@ -106,8 +102,8 @@ func run(address string, noOpen bool, idleTimeout time.Duration, logPath string,
 		Origin:       origin,
 		Token:        token,
 		Engine:       configuredEngine,
-		LoadSettings: loadSettings,
-		SaveSettings: saveSettings,
+		LoadSettings: settings.Load,
+		SaveSettings: settings.Save,
 		OpenLog:      func() error { return openPath(logPath) },
 		Quit:         requestQuit,
 		OnActivity: func() {
@@ -193,7 +189,7 @@ func configuredEngine() (transcriber.Transcriber, webapp.EngineStatus, error) {
 	if err != nil {
 		return nil, status, err
 	}
-	if err := validateConfig(cfg); err != nil {
+	if err := settings.Validate(cfg); err != nil {
 		return nil, status, err
 	}
 	engine, err := app.ConfiguredEngine(cfg)
@@ -201,122 +197,6 @@ func configuredEngine() (transcriber.Transcriber, webapp.EngineStatus, error) {
 		cloud.Client = secureCloudClient()
 	}
 	return engine, status, err
-}
-
-func loadSettings() (webapp.Settings, error) {
-	cfg, _, err := config.Load()
-	if err != nil {
-		return webapp.Settings{}, err
-	}
-	return webapp.Settings{
-		Engine:         cfg.Engine,
-		Language:       cfg.Language,
-		CloudEndpoint:  cfg.Cloud.Endpoint,
-		CloudModel:     cfg.Cloud.Model,
-		HasCloudAPIKey: cfg.Cloud.APIKey != "",
-		LocalBinary:    cfg.Local.Binary,
-		LocalModel:     cfg.Local.Model,
-	}, nil
-}
-
-func saveSettings(settings webapp.Settings) error {
-	settingsMu.Lock()
-	defer settingsMu.Unlock()
-
-	for _, name := range []string{
-		"VTT_CONFIG",
-		"VTT_ENGINE",
-		"VTT_LANGUAGE",
-		"VTT_WHISPER_BINARY",
-		"VTT_WHISPER_MODEL",
-		"VTT_CLOUD_ENDPOINT",
-		"VTT_CLOUD_API_KEY",
-		"VTT_CLOUD_MODEL",
-		"VTT_SHORTCUT",
-	} {
-		if _, set := os.LookupEnv(name); set {
-			return fmt.Errorf("settings are controlled by %s; remove that environment override before saving", name)
-		}
-	}
-	cfg, loadedPath, err := config.Load()
-	if err != nil {
-		return err
-	}
-	userPath, err := config.UserPath()
-	if err != nil {
-		return err
-	}
-	if loadedPath != "" && loadedPath != userPath {
-		return fmt.Errorf("settings are controlled by %s; update that file directly", loadedPath)
-	}
-
-	cfg.Engine = strings.TrimSpace(settings.Engine)
-	cfg.Language = strings.TrimSpace(settings.Language)
-	cfg.Cloud.Endpoint = strings.TrimSpace(settings.CloudEndpoint)
-	cfg.Cloud.Model = strings.TrimSpace(settings.CloudModel)
-	cfg.Local.Binary = strings.TrimSpace(settings.LocalBinary)
-	cfg.Local.Model = strings.TrimSpace(settings.LocalModel)
-	if settings.CloudAPIKey != nil {
-		cfg.Cloud.APIKey = strings.TrimSpace(*settings.CloudAPIKey)
-	}
-	if cfg.Cloud.Model == "" {
-		cfg.Cloud.Model = "whisper-1"
-	}
-	if err := validateConfig(cfg); err != nil {
-		return err
-	}
-	_, err = config.SaveUser(cfg)
-	return err
-}
-
-func validateConfig(cfg config.Config) error {
-	if len(cfg.Language) > 32 || containsControl(cfg.Language) {
-		return fmt.Errorf("language must be at most 32 characters and contain no control characters")
-	}
-	if len(cfg.Cloud.APIKey) > 8192 {
-		return fmt.Errorf("cloud API key exceeds 8192 characters")
-	}
-	switch cfg.Engine {
-	case "cloud":
-		if len(cfg.Cloud.Endpoint) > 4096 {
-			return fmt.Errorf("cloud endpoint exceeds 4096 characters")
-		}
-		endpoint, err := url.ParseRequestURI(cfg.Cloud.Endpoint)
-		if err != nil {
-			return fmt.Errorf("cloud endpoint must be a valid HTTPS URL")
-		}
-		if err := validateCloudURL(endpoint); err != nil {
-			return err
-		}
-		if len(cfg.Cloud.Model) > 256 || containsControl(cfg.Cloud.Model) {
-			return fmt.Errorf("cloud model must be at most 256 characters and contain no control characters")
-		}
-	case "local":
-		if cfg.Local.Model == "" {
-			return fmt.Errorf("local Whisper model path is required")
-		}
-		if len(cfg.Local.Model) > 4096 || len(cfg.Local.Binary) > 4096 {
-			return fmt.Errorf("local Whisper paths exceed 4096 characters")
-		}
-		modelInfo, err := os.Stat(cfg.Local.Model)
-		if err != nil || !modelInfo.Mode().IsRegular() {
-			return fmt.Errorf("local Whisper model is not a readable file")
-		}
-		binary := cfg.Local.Binary
-		if binary == "" {
-			binary = "whisper-cli"
-		}
-		if _, err := exec.LookPath(binary); err != nil {
-			return fmt.Errorf("local whisper-cli executable was not found")
-		}
-	default:
-		return fmt.Errorf("transcription engine must be cloud or local")
-	}
-	return nil
-}
-
-func containsControl(value string) bool {
-	return strings.IndexFunc(value, unicode.IsControl) >= 0
 }
 
 func validateLoopbackAddress(address string) error {
@@ -331,27 +211,6 @@ func validateLoopbackAddress(address string) error {
 	return nil
 }
 
-func validateCloudURL(endpoint *url.URL) error {
-	if endpoint == nil || endpoint.Host == "" || endpoint.User != nil {
-		return fmt.Errorf("cloud endpoint must be a valid URL without embedded credentials")
-	}
-	if endpoint.Scheme == "https" {
-		return nil
-	}
-	if endpoint.Scheme != "http" {
-		return fmt.Errorf("cloud endpoint must use HTTPS")
-	}
-	host := endpoint.Hostname()
-	if strings.EqualFold(host, "localhost") {
-		return nil
-	}
-	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsLoopback() {
-		return fmt.Errorf("cloud endpoint must use HTTPS unless it is on loopback")
-	}
-	return nil
-}
-
 func secureCloudClient() *http.Client {
 	return &http.Client{
 		// No Client-level Timeout: the per-request context deadline set by
@@ -361,7 +220,7 @@ func secureCloudClient() *http.Client {
 			if len(via) >= 10 {
 				return fmt.Errorf("too many transcription endpoint redirects")
 			}
-			if err := validateCloudURL(request.URL); err != nil {
+			if err := settings.ValidateCloudURL(request.URL); err != nil {
 				return fmt.Errorf("refuse transcription endpoint redirect: %w", err)
 			}
 			return nil

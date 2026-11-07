@@ -18,6 +18,9 @@ func (Recorder) Record(ctx context.Context, onLevel func(float32)) ([]float32, e
 	if onLevel == nil {
 		onLevel = func(float32) {}
 	}
+	if err := microphoneReady(); err != nil {
+		return nil, err
+	}
 	malgoCtx, err := malgo.InitContext(nil, malgo.ContextConfig{}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("initialize audio: %w", err)

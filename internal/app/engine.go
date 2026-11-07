@@ -1,14 +1,39 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
-	"os/exec"
-	"strings"
+	"sync"
 
 	"github.com/sawy3r/voxsteer/internal/config"
 	"github.com/sawy3r/voxsteer/internal/transcriber"
 )
+
+// SwitchableEngine lets saved settings replace the transcriber while VoxSteer
+// runs, and lets it start before any engine has been configured.
+type SwitchableEngine struct {
+	mu      sync.RWMutex
+	current transcriber.Transcriber
+}
+
+// Set replaces the transcriber. A dictation already in progress finishes with
+// the one it started with.
+func (e *SwitchableEngine) Set(engine transcriber.Transcriber) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.current = engine
+}
+
+func (e *SwitchableEngine) Transcribe(ctx context.Context, samples []float32) (string, error) {
+	e.mu.RLock()
+	current := e.current
+	e.mu.RUnlock()
+	if current == nil {
+		return "", &Notice{Message: "Choose an engine in Settings"}
+	}
+	return current.Transcribe(ctx, samples)
+}
 
 // ConfiguredEngine creates the transcription engine selected by cfg. The
 // configuration is validated up front so a broken setup fails at startup with
@@ -53,16 +78,7 @@ func ConfiguredEngine(cfg config.Config) (transcriber.Transcriber, error) {
 // execute actually exists, mirroring the lookup LocalWhisper performs.
 func checkWhisperCLI(binary string) error {
 	const remedy = `build whisper.cpp (https://github.com/ggml-org/whisper.cpp) and point "local.binary" in the configuration file or VTT_WHISPER_BINARY at the built whisper-cli`
-	if binary == "" {
-		binary = "whisper-cli"
-	}
-	if strings.ContainsRune(binary, os.PathSeparator) {
-		if _, err := os.Stat(binary); err != nil {
-			return fmt.Errorf("whisper.cpp CLI is not usable: %w; %s", err, remedy)
-		}
-		return nil
-	}
-	if _, err := exec.LookPath(binary); err != nil {
+	if _, err := transcriber.FindWhisperCLI(binary); err != nil {
 		return fmt.Errorf("whisper.cpp CLI is not usable: %w; %s", err, remedy)
 	}
 	return nil

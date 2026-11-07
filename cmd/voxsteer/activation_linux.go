@@ -16,7 +16,11 @@ import (
 // grabs never fire while a native Wayland window has focus, and Wayland
 // compositors do not offer global grabs at all.
 func configureActivation(spec shortcut.Spec, controller *app.Controller) func() {
-	if spec.Key == "" && spec.MouseButton == 0 {
+	if spec.DoubleTapLeftCtrl {
+		log.Printf("%s is only available on macOS; the tray menu remains available", spec.Display)
+		return func() {}
+	}
+	if spec.Disabled() {
 		return func() {}
 	}
 	events, stop, err := activation.Listen(spec)

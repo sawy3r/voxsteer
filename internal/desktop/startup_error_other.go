@@ -3,18 +3,17 @@
 package desktop
 
 import (
-	"fmt"
 	"log"
 	"os/exec"
 )
 
-// ShowStartupError records the failure and raises a notification so the
-// problem is visible even when VoxSteer was launched without a terminal.
+// ShowStartupError records the failure and raises an alert. VoxSteer.app has no
+// window or terminal, and a notification would truncate the setup instructions
+// these errors carry.
 func ShowStartupError(err error) {
 	log.Printf("VoxSteer could not start: %v", err)
-	if path, lookErr := exec.LookPath("osascript"); lookErr == nil {
-		script := fmt.Sprintf("display notification %q with title %q",
-			"VoxSteer could not start: "+err.Error(), "VoxSteer")
-		_ = exec.Command(path, "-e", script).Run()
-	}
+	script := `on run argv
+display alert "VoxSteer could not start" message (item 1 of argv) as critical
+end run`
+	_ = exec.Command("/usr/bin/osascript", "-e", script, err.Error()).Run()
 }

@@ -65,6 +65,122 @@ func TestControllerReportsTranscriptionErrorAfterReturningIdle(t *testing.T) {
 	}
 }
 
+func TestControllerKeepsNoticeRecognisableThroughRecordFailure(t *testing.T) {
+	reported := make(chan error, 1)
+	controller := New(
+		recorderFunc(func(context.Context, func(float32)) ([]float32, error) {
+			return nil, &Notice{Message: "Allow the microphone"}
+		}),
+		transcriberFunc(func(context.Context, []float32) (string, error) {
+			t.Fatal("transcriber should not run without audio")
+			return "", nil
+		}),
+		injectorFunc(func(string) error {
+			t.Fatal("injector should not run without audio")
+			return nil
+		}),
+		nil,
+		nil,
+		func(err error) { reported <- err },
+	)
+
+	if err := controller.Toggle(); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case err := <-reported:
+		var notice *Notice
+		if !errors.As(err, &notice) || notice.Message != "Allow the microphone" {
+			t.Fatalf("error = %v, want the notice", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for the notice")
+	}
+	if status := controller.Status(); status != Idle {
+		t.Fatalf("status = %q, want idle so dictation can be retried", status)
+	}
+}
+
+func TestControllerReportsInjectorNoticeAfterReturningIdle(t *testing.T) {
+	reported := make(chan error, 1)
+	controller := New(
+		recorderFunc(func(ctx context.Context, _ func(float32)) ([]float32, error) {
+			<-ctx.Done()
+			return []float32{0.1}, nil
+		}),
+		transcriberFunc(func(context.Context, []float32) (string, error) {
+			return "hello", nil
+		}),
+		injectorFunc(func(string) error {
+			return &Notice{Message: "Copied"}
+		}),
+		nil,
+		nil,
+		func(err error) { reported <- err },
+	)
+
+	if err := controller.Toggle(); err != nil {
+		t.Fatal(err)
+	}
+	if err := controller.Toggle(); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case err := <-reported:
+		var notice *Notice
+		if !errors.As(err, &notice) || notice.Message != "Copied" {
+			t.Fatalf("error = %v, want the notice", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for the notice")
+	}
+	if status := controller.Status(); status != Idle {
+		t.Fatalf("status = %q, want idle", status)
+	}
+}
+
+func TestControllerReportsWhenNoSpeechWasRecognised(t *testing.T) {
+	reported := make(chan error, 1)
+	controller := New(
+		recorderFunc(func(ctx context.Context, _ func(float32)) ([]float32, error) {
+			<-ctx.Done()
+			return []float32{0.1}, nil
+		}),
+		transcriberFunc(func(context.Context, []float32) (string, error) {
+			return " \n", nil
+		}),
+		injectorFunc(func(string) error {
+			t.Fatal("injector should not run without text")
+			return nil
+		}),
+		nil,
+		nil,
+		func(err error) { reported <- err },
+	)
+
+	if err := controller.Toggle(); err != nil {
+		t.Fatal(err)
+	}
+	if err := controller.Toggle(); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case err := <-reported:
+		var notice *Notice
+		if !errors.As(err, &notice) || notice.Message != NoSpeechMessage {
+			t.Fatalf("error = %v, want the no speech notice", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for the notice")
+	}
+	if status := controller.Status(); status != Idle {
+		t.Fatalf("status = %q, want idle", status)
+	}
+}
+
 type transcriberFunc func(context.Context, []float32) (string, error)
 
 func (f transcriberFunc) Transcribe(ctx context.Context, in []float32) (string, error) {
