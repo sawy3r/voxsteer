@@ -72,9 +72,9 @@ func (l *LocalWhisper) Transcribe(ctx context.Context, samples []float32) (strin
 		return "", err
 	}
 
-	binary := l.Binary
-	if binary == "" {
-		binary = "whisper-cli"
+	binary, err := FindWhisperCLI(l.Binary)
+	if err != nil {
+		return "", fmt.Errorf("whisper.cpp CLI is not usable: %w", err)
 	}
 	// --no-prints keeps diagnostics off stdout while preserving the transcript
 	// result. Reading stdout directly avoids version-specific output-file

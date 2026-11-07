@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -97,5 +99,31 @@ func TestConfiguredEngineRejectsUnknownEngine(t *testing.T) {
 	cfg.Engine = "other"
 	if _, err := ConfiguredEngine(cfg); err == nil {
 		t.Fatal("ConfiguredEngine() error = nil, want invalid engine error")
+	}
+}
+
+func TestSwitchableEngineUsesTheLatestTranscriber(t *testing.T) {
+	var engine SwitchableEngine
+	engine.Set(transcriberFunc(func(context.Context, []float32) (string, error) {
+		return "first", nil
+	}))
+	engine.Set(transcriberFunc(func(context.Context, []float32) (string, error) {
+		return "second", nil
+	}))
+	got, err := engine.Transcribe(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "second" {
+		t.Fatalf("Transcribe() = %q", got)
+	}
+}
+
+func TestSwitchableEngineAsksForSetupWhenEmpty(t *testing.T) {
+	var engine SwitchableEngine
+	_, err := engine.Transcribe(context.Background(), nil)
+	var notice *Notice
+	if !errors.As(err, &notice) {
+		t.Fatalf("Transcribe() error = %v, want a notice", err)
 	}
 }

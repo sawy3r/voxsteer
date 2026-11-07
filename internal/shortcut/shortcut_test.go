@@ -30,6 +30,38 @@ func TestParse(t *testing.T) {
 	}
 }
 
+func TestParseDoubleTap(t *testing.T) {
+	got, err := Parse("Double-Left-Ctrl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.DoubleTapLeftCtrl || got.Key != "" || got.Display != "Double-tap left Ctrl" {
+		t.Fatalf("Parse() = %#v", got)
+	}
+	if got.Disabled() {
+		t.Fatal("double-tap activation reported as disabled")
+	}
+}
+
+func TestDisabled(t *testing.T) {
+	spec, err := Parse(Disabled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !spec.Disabled() {
+		t.Fatalf("Parse(%q).Disabled() = false", Disabled)
+	}
+	for _, value := range []string{"ctrl+alt+space", "mouse4"} {
+		spec, err := Parse(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if spec.Disabled() {
+			t.Fatalf("Parse(%q).Disabled() = true", value)
+		}
+	}
+}
+
 func TestParseRejectsInvalidShortcuts(t *testing.T) {
 	for _, value := range []string{
 		"s", "ctrl", "ctrl+s+d", "ctrl+escape", "ctrl+ctrl+s",

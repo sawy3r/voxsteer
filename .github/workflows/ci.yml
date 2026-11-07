@@ -38,6 +38,37 @@ jobs:
       - if: runner.os == 'macOS' || runner.os == 'Linux'
         run: go test -tags desktop ./...
 
+  macos-native-bundle:
+    name: macOS native bundle
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build ad-hoc Universal 2 bundle
+        env:
+          VERSION: 0.0.0
+          BUILD_NUMBER: ${{ github.run_number }}
+          MACOS_SIGN_IDENTITY: "-"
+        run: bash scripts/build-macos.sh
+
+      - name: Verify bundle
+        run: |
+          app="dist/macos/VoxSteer.app"
+          archs=" $(lipo -archs "$app/Contents/MacOS/voxsteer") "
+          [[ "$archs" == *" x86_64 "* ]]
+          [[ "$archs" == *" arm64 "* ]]
+          plutil -lint "$app/Contents/Info.plist"
+          test "$(plutil -extract LSMinimumSystemVersion raw "$app/Contents/Info.plist")" = "13.0"
+          test "$(plutil -extract LSUIElement raw "$app/Contents/Info.plist")" = "true"
+          plutil -extract NSMicrophoneUsageDescription raw "$app/Contents/Info.plist"
+          codesign --verify --strict --verbose=2 "$app"
+          codesign -d --entitlements - "$app" | grep -q com.apple.security.device.audio-input
+
   macos-browser-bundle:
     name: macOS browser bundle
     runs-on: macos-15

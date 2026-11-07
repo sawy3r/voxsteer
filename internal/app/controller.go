@@ -119,8 +119,14 @@ func (c *Controller) capture(ctx context.Context) {
 	if err == nil {
 		log.Printf("transcription complete: characters=%d", len([]rune(strings.TrimSpace(text))))
 	}
-	if err == nil && strings.TrimSpace(text) != "" {
-		err = c.injector.Type(strings.TrimSpace(text) + " ")
+	if err == nil {
+		if text = strings.TrimSpace(text); text == "" {
+			// Without this, a silent or unintelligible recording looks
+			// exactly like VoxSteer failing to type.
+			err = &Notice{Message: NoSpeechMessage}
+		} else {
+			err = c.injector.Type(text + " ")
+		}
 	}
 	if err != nil {
 		c.finish(Idle)

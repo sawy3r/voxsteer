@@ -6,18 +6,25 @@ import (
 )
 
 const (
-	Default  = "ctrl+alt+space"
-	Disabled = "disabled"
+	Default        = "ctrl+alt+space"
+	Disabled       = "disabled"
+	DoubleLeftCtrl = "double-left-ctrl"
 )
 
 type Spec struct {
-	Ctrl        bool
-	Alt         bool
-	Shift       bool
-	Super       bool
-	Key         string
-	MouseButton int
-	Display     string
+	Ctrl              bool
+	Alt               bool
+	Shift             bool
+	Super             bool
+	Key               string
+	MouseButton       int
+	DoubleTapLeftCtrl bool
+	Display           string
+}
+
+// Disabled reports whether nothing but the menu starts dictation.
+func (s Spec) Disabled() bool {
+	return s.Key == "" && s.MouseButton == 0 && !s.DoubleTapLeftCtrl
 }
 
 func Parse(value string) (Spec, error) {
@@ -27,6 +34,9 @@ func Parse(value string) (Spec, error) {
 	}
 	if value == Disabled {
 		return Spec{Display: "Mouse / tray only"}, nil
+	}
+	if value == DoubleLeftCtrl {
+		return Spec{DoubleTapLeftCtrl: true, Display: "Double-tap left Ctrl"}, nil
 	}
 	if strings.HasPrefix(value, "mouse") {
 		var button int

@@ -1,4 +1,4 @@
-.PHONY: test build-desktop build-linux install-linux build-browser build-macos-browser build-windows-amd64 build-windows-arm64 build-windows
+.PHONY: test build-desktop build-linux install-linux build-macos install-macos build-browser build-macos-browser build-windows-amd64 build-windows-arm64 build-windows
 
 test:
 	go test ./...
@@ -14,6 +14,12 @@ build-linux:
 
 install-linux: build-linux
 	./scripts/install-linux.sh
+
+build-macos:
+	bash scripts/build-macos.sh
+
+install-macos: build-macos
+	bash scripts/install-macos.sh
 
 build-browser:
 	mkdir -p bin

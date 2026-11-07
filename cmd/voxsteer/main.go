@@ -3,11 +3,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 
 	"fyne.io/systray"
@@ -15,6 +17,8 @@ import (
 	"github.com/sawy3r/voxsteer/internal/config"
 	"github.com/sawy3r/voxsteer/internal/desktop"
 	"github.com/sawy3r/voxsteer/internal/hud"
+	"github.com/sawy3r/voxsteer/internal/settings"
+	"github.com/sawy3r/voxsteer/internal/settingsui"
 	"github.com/sawy3r/voxsteer/internal/shortcut"
 )
 
@@ -42,15 +46,22 @@ func run(logPath string) error {
 	if err != nil {
 		return err
 	}
-	engine, err := app.ConfiguredEngine(cfg)
-	if err != nil {
-		if configPath == "" {
-			location := "config.json beside the executable"
-			if userPath, pathErr := config.UserPath(); pathErr == nil {
-				location = userPath
-			}
-			return fmt.Errorf("%w; no configuration file was found — create %s (start from config.example.json) or set VTT_CONFIG", err, location)
+	engine := &app.SwitchableEngine{}
+	needsSetup := false
+	configured, err := app.ConfiguredEngine(cfg)
+	switch {
+	case err == nil:
+		engine.Set(configured)
+	case settingsui.Available:
+		log.Printf("transcription is not set up: %v", err)
+		needsSetup = true
+	case configPath == "":
+		location := "config.json beside the executable"
+		if userPath, pathErr := config.UserPath(); pathErr == nil {
+			location = userPath
 		}
+		return fmt.Errorf("%w; no configuration file was found — create %s (start from config.example.json) or set VTT_CONFIG", err, location)
+	default:
 		return fmt.Errorf("%w (configuration: %s)", err, configPath)
 	}
 	activation, err := shortcut.Parse(cfg.Shortcut)
@@ -91,6 +102,13 @@ func run(logPath string) error {
 			},
 			overlay.SetLevel,
 			func(err error) {
+				var notice *app.Notice
+				if errors.As(err, &notice) {
+					log.Printf("dictation: %v", err)
+					statusItem.SetTitle(notice.Message)
+					overlay.SetStatus(notice.Message)
+					return
+				}
 				log.Printf("dictation failed: %v", err)
 				statusItem.SetTitle("Error: see VoxSteer log")
 				overlay.SetError()
@@ -98,11 +116,64 @@ func run(logPath string) error {
 		)
 		runningController.Store(controller)
 		toggleItem := systray.AddMenuItem("Start / stop dictation", activation.Display)
+		permissionItem := systray.AddMenuItem("", "Open System Settings")
+		permissionItem.Hide()
+		var settingsClicked <-chan struct{}
+		if settingsui.Available {
+			settingsClicked = systray.AddMenuItem("Settings…", "Change VoxSteer settings").ClickedCh
+		}
 		systray.AddSeparator()
 		logItem := systray.AddMenuItem("Open diagnostic log", logPath)
 		quitItem := systray.AddMenuItem("Quit", "Quit VoxSteer")
 
-		stopActivation := configureActivation(activation, controller)
+		desktop.RequestPermissions()
+		go desktop.WatchPermissions(func(missing desktop.Permission) {
+			if missing.Name == "" {
+				log.Print("all permissions granted")
+				permissionItem.Hide()
+				return
+			}
+			log.Printf("waiting for %s permission", missing.Name)
+			permissionItem.SetTitle("Allow " + missing.Name + " access…")
+			permissionItem.Show()
+		})
+		var current runningActivation
+		current.replace(func() func() { return configureActivation(activation, controller) })
+
+		applySettings := func() {
+			cfg, _, err := config.Load()
+			if err != nil {
+				log.Printf("apply settings: %v", err)
+				return
+			}
+			if configured, err := app.ConfiguredEngine(cfg); err != nil {
+				log.Printf("apply settings: %v", err)
+			} else {
+				engine.Set(configured)
+			}
+			spec, err := shortcut.Parse(cfg.Shortcut)
+			if err != nil {
+				log.Printf("apply settings: %v", err)
+				return
+			}
+			current.replace(func() func() { return configureActivation(spec, controller) })
+			systray.SetTooltip("VoxSteer — " + spec.Display)
+			toggleItem.SetTooltip(spec.Display)
+			log.Printf("settings applied: engine %s, activation %s", cfg.Engine, spec.Display)
+		}
+		openSettings := func() {
+			settingsui.Open(settingsui.Options{
+				Load: settings.Load,
+				Save: settings.Save,
+				// Replacing a shortcut waits on the main thread, which is
+				// the thread saving runs on.
+				OnSaved: func() { go applySettings() },
+			})
+		}
+		if needsSetup {
+			openSettings()
+		}
+
 		go func() {
 			for {
 				select {
@@ -110,12 +181,20 @@ func run(logPath string) error {
 					if err := controller.Toggle(); err != nil {
 						log.Print(err)
 					}
+				case <-settingsClicked:
+					openSettings()
+				case <-permissionItem.ClickedCh:
+					if url := desktop.MissingPermission().SettingsURL; url != "" {
+						if err := openPath(url); err != nil {
+							log.Printf("open permission settings: %v", err)
+						}
+					}
 				case <-logItem.ClickedCh:
 					if err := openPath(logPath); err != nil {
 						log.Printf("open diagnostic log: %v", err)
 					}
 				case <-quitItem.ClickedCh:
-					stopActivation()
+					current.stop()
 					stopControl()
 					overlay.Close()
 					systray.Quit()
@@ -126,6 +205,31 @@ func run(logPath string) error {
 		log.Printf("ready: %s", desktop.InjectionRequirements())
 	}, func() {})
 	return nil
+}
+
+// runningActivation holds whichever activation is live, so saved settings can
+// swap it without a restart.
+type runningActivation struct {
+	mu      sync.Mutex
+	release func()
+}
+
+func (r *runningActivation) replace(start func() func()) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.release != nil {
+		r.release()
+	}
+	r.release = start()
+}
+
+func (r *runningActivation) stop() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.release != nil {
+		r.release()
+		r.release = nil
+	}
 }
 
 func startLogging() (string, func(), error) {

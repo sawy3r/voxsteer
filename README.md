@@ -78,6 +78,44 @@ make build-desktop
 
 Optional: set `VTT_LANGUAGE` to an ISO language code.
 
+## macOS
+
+On a Mac where you can grant permissions, install the native app. It needs Go and the Xcode command-line tools to build. Managed Macs that block those permissions should use browser mode instead.
+
+```sh
+VERSION=0.3.0 make install-macos
+```
+
+This builds a Universal 2 `VoxSteer.app`, copies it to `/Applications` (set `INSTALL_DIR` to change that), adds a login item, and starts it. `make build-macos` only builds it, into `dist/macos`.
+
+On first launch VoxSteer asks for the microphone, then for Accessibility, which covers both activation and typing. Until both are granted, the menu shows an **Allow … access** item that opens the right page of System Settings. Activation starts working as soon as Accessibility is on, without a restart. If the microphone has not been allowed, dictation stops straight away and says so in the menu bar.
+
+### Settings
+
+Open **Settings…** from the VoxSteer menu. The window opens by itself at launch until a working transcription engine is saved. Saved changes apply immediately, without a restart.
+
+To start dictation, choose one of:
+
+- **Double-tap left Ctrl.** Tap it twice to start, and twice again to stop. The second tap must follow within 350 ms, and pressing anything else in between cancels it, so Ctrl+C or Ctrl-clicking never triggers dictation. If macOS Dictation is set to **Press Control Key Twice**, pick a different shortcut there.
+- **Key combination.** Click **Change…** and press it.
+- **Mouse button**, or **Menu bar only**.
+
+**On this Mac** transcribes locally: run `brew install whisper.cpp`, download a [ggml model](https://huggingface.co/ggerganov/whisper.cpp), and enter both paths in full, because applications launched from Finder do not inherit your shell's `PATH`. **Cloud service** takes the endpoint, model, and API key. The saved key is never shown again; leave the field empty to keep it.
+
+Settings are stored in `~/Library/Application Support/VoxSteer/config.json`, which browser mode shares. If you edit that file by hand, restart VoxSteer. There, `shortcut` is `double-left-ctrl`, `disabled`, `mouse3` to `mouse5`, or a combination such as `cmd+shift+d`, where `alt` means Option.
+
+### Using it
+
+The menu bar title shows the state: `● Recording`, `Transcribing…`, or a short message. macOS's own microphone indicator also appears while recording.
+
+If macOS would discard the typed text, because Accessibility is off or a password field has turned on Secure Input, VoxSteer copies the transcript to the clipboard instead and shows `Copied: press ⌘V to paste`. This is the only time VoxSteer touches the clipboard.
+
+To drive VoxSteer from another tool, such as Shortcuts, run `/Applications/VoxSteer.app/Contents/MacOS/voxsteer toggle`.
+
+Local builds are ad-hoc signed, and macOS ties the Accessibility grant to that exact build, so each rebuild has to be granted again. `make install-macos` clears the stale entry so the prompt returns. To keep grants across rebuilds, sign with a stable identity by setting `MACOS_SIGN_IDENTITY` to a certificate name in your keychain.
+
+`make build-desktop` produces a bare binary for development. macOS attributes it to the terminal that started it, so it raises no prompts at launch, and any grant goes to the terminal rather than to VoxSteer.
+
 ## Browser mode for managed macOS
 
 Browser mode avoids native macOS Microphone, Accessibility, and Input
@@ -275,9 +313,7 @@ executable. Relative Whisper paths are resolved from that file. Existing
 
 - Linux: GCC for the bundled miniaudio (`sudo apt install build-essential`).
   No X11 or GTK development headers are needed. At runtime, X11 sessions and Wayland compositors without the virtual-keyboard protocol need a typing tool (`xdotool` on X11, `ydotool` on Wayland); see the Linux section for typing and activation options.
-- macOS: Xcode command-line tools. Grant Accessibility, Input Monitoring, and
-  microphone permissions for native desktop mode. Browser mode requires none
-  of these permissions for the VoxSteer process.
+- macOS: Go and the Xcode command-line tools. `VoxSteer.app` asks for the microphone and Accessibility on first launch. Browser mode requires neither of these permissions for the VoxSteer process.
 - Windows: no C compiler is needed for the Go application. Building local
   whisper.cpp requires Visual Studio C++ Build Tools; the RTX 3090 build also
   requires the NVIDIA CUDA Toolkit. Grant microphone access under
@@ -291,8 +327,9 @@ does not remove those desktop requirements.
 ## Verification
 
 VoxSteer writes operational diagnostics to
-`%AppData%\VoxSteer\voxsteer.log` on Windows and
-`~/.config/VoxSteer/voxsteer.log` on Linux. The log records captured audio
+`%AppData%\VoxSteer\voxsteer.log` on Windows,
+`~/.config/VoxSteer/voxsteer.log` on Linux, and
+`~/Library/Application Support/VoxSteer/voxsteer.log` on macOS. The log records captured audio
 duration, transcription success, and actionable errors, but never transcript
 text. Use **Open diagnostic log** in the VoxSteer tray menu rather than
 navigating AppData manually. A transcription failure also appears briefly in
