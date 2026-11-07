@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-vgo/robotgo"
 	"github.com/sawy3r/voxsteer/internal/app"
 )
 
@@ -20,7 +19,9 @@ func (Injector) Type(text string) error {
 	if reason := typingBlocked(); reason != "" {
 		return copyInstead(text, reason)
 	}
-	robotgo.Type(text)
+	if err := typeText(text); err != nil {
+		return copyInstead(text, err.Error())
+	}
 	return nil
 }
 
